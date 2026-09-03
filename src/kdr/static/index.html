@@ -141,7 +141,7 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
     </div>
     <div class="cites" id="rcites"></div>
   </section>
-  <footer>bge-m3 + kiwi BM25 hybrid · LangGraph · 로컬 Ollama — <a href="/docs">API 문서</a></footer>
+  <footer>bge-m3 + kiwi BM25 hybrid · LangGraph · 로컬 Ollama · <a href="/docs">API 문서</a></footer>
 </main>
 <script>
 const $=s=>document.querySelector(s);
@@ -210,7 +210,7 @@ function render(d){
   $("#rcites").innerHTML=d.citations.length?d.citations.map(c=>{
     const isT=c.text.startsWith("[표]");
     return `<div class="card cite"><div class="h"><span class="n">${c.n}</span><span class="t">${esc(c.title)}</span>${isT?'<span class="k">표</span>':""}<span class="s">${c.score.toFixed(3)}</span></div><div class="body">${esc(c.text)}</div><button class="more" onclick="this.parentElement.classList.toggle('open');this.textContent=this.parentElement.classList.contains('open')?'접기':'더 보기'">더 보기</button></div>`;
-  }).join(""):`<div class="note">${d.mode==="none"?"검색 없이 모델 지식만으로 답했습니다 — 출처 없음.":"인용된 문단이 없습니다."}</div>`;
+  }).join(""):`<div class="note">${d.mode==="none"?"검색 없이 모델 지식만으로 답했으므로 출처가 없습니다.":"인용된 문단이 없습니다."}</div>`;
   $("#result").style.display="block";
 }
 $("#go").onclick=ask;

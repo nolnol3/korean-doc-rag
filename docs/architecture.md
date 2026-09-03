@@ -1,17 +1,17 @@
 # 구조
 
 ```
-[오프라인]  문서 ─▶ 문단 청크 ─▶ bge-m3 임베딩 ─▶ Chroma
-                          └─▶ kiwi 형태소 ─▶ BM25         두 결과를 RRF로 합침 (hybrid)
+[색인]     문서 ─▶ 문단 청크 ─▶ bge-m3 임베딩 ─▶ Chroma
+                          └─▶ kiwi 형태소 분석 ─▶ BM25        두 결과를 RRF로 합친다 (hybrid)
 
-[온라인]    POST /ask {q}
+[질의]     POST /ask {q}
               │
    ┌──────────┴──────────── graph.py (LangGraph) ───────────────────────────┐
-   │  retrieve ─▶ grade ─┬─ 관련 있음 ─▶ generate ─▶ verify ─┬─ 근거 있음 ─▶ END
-   │     ▲               │                                  │
-   │     │               └─ 관련 없음 ─▶ rewrite ──┐         └─ 근거 없음 ─┐
-   │     └─────────────────────────────────────────┴──────────────────────┘
-   │                          재시도 ≤ 2 · 같은 근거면 정지 · 소진 시 "근거 못 찾음"
+   │  retrieve ─▶ grade ─┬─ 관련 문서 있음 ─▶ generate ─▶ verify ─┬─ 근거 확인 ─▶ END
+   │     ▲               │                                        │
+   │     │               └─ 관련 문서 없음 ─▶ rewrite ──┐          └─ 근거 없음 ─┐
+   │     └───────────────────────────────────────────────┴────────────────────┘
+   │                 재시도는 2회까지. 재검색 결과가 이전과 같으면 멈추고, 재시도를 다 쓰면 "근거를 찾지 못했다"고 답한다
    └──────────────────────────────────────────────────────────────────────┘
               │
         {answer, citations[], path[], grounded, attempts}
@@ -19,82 +19,83 @@
 
 ## 노드
 
-| 노드 | 하는 일 | LLM 호출 |
+| 노드 | 역할 | LLM 호출 |
 |---|---|---|
-| `retrieve` | hybrid 검색 top-5 (벡터 + 형태소 BM25, RRF) | 0 |
-| `grade` | 문서마다 "질문의 답이 이 안에 있나" yes/no — 병렬 | 5 |
-| `rewrite` | 관련 문서가 없으면 질의를 검색용으로 재작성. 이전 질의 목록을 보여줘 반복을 막는다 | 1 |
-| `generate` | 관련 문서만 넣고 답 생성. `[n]` 인용 강제, 정답만 명사구로 | 1 |
-| `verify` | 답의 핵심 사실이 인용 문서로 뒷받침되는가 | 1 |
+| `retrieve` | hybrid 검색으로 상위 5개 문단을 가져온다 | 0 |
+| `grade` | 문단마다 "질문의 답이 이 안에 있는가"를 예/아니오로 판정한다. 5개를 병렬로 호출한다 | 5 |
+| `rewrite` | 관련 문단이 하나도 없을 때 검색용 질의를 다시 쓴다. 이미 시도한 질의 목록을 함께 주어 같은 질의가 반복되지 않게 한다 | 1 |
+| `generate` | 관련 문단만 넣고 답을 만든다. 답은 명사구로 짧게 쓰고 근거 문단 번호를 `[n]` 형식으로 붙이게 한다 | 1 |
+| `verify` | 답의 핵심 사실이 인용한 문단으로 뒷받침되는지 확인한다 | 1 |
 
-분기 두 곳:
-- `grade` 뒤 — 관련 문서 있음 → `generate` / 없음 → `rewrite`(남은 재시도가 있으면) / 소진 → "문서에서 근거를 찾지 못했습니다"
-- `verify` 뒤 — 근거 있음 → 끝 / 없음 → `rewrite`. 단 재검색 결과가 **직전과 같은 문서**면 같은 답이 나오므로 그 자리에서 멈춘다 (`stop:no-new-evidence`)
+분기는 두 곳에 있다.
 
-호출 수: 최선 7 (grade 5 + generate + verify), 최악 약 15.
+- `grade` 다음: 관련 문단이 있으면 `generate`로 간다. 없으면 남은 재시도가 있을 때 `rewrite`로 가고, 없으면 "문서에서 근거를 찾지 못했습니다"로 끝낸다.
+- `verify` 다음: 근거가 확인되면 끝낸다. 확인되지 않으면 `rewrite`로 간다. 단, 재검색해서 가져온 문단이 직전과 같으면 같은 답이 다시 나올 것이므로 그 자리에서 멈춘다(`stop:no-new-evidence`).
 
-## 대조군
+LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 많을 때 15회 정도다.
 
-| arm | 구성 | 재는 것 |
+## 비교 대상
+
+| arm | 구성 | 확인하려는 것 |
 |---|---|---|
-| `none` | 검색 없이 LLM만 | "그냥 호출"과의 차이 |
-| `naive` | `retrieve → generate` | 단순 RAG |
-| `graph` | 위 그래프 | grade·rewrite·verify의 몫 |
+| `none` | 검색 없이 LLM만 | 모델이 문서 없이 얼마나 답하는가 |
+| `naive` | `retrieve → generate` | 검색만 붙였을 때의 효과 |
+| `graph` | 위의 그래프 | grade·rewrite·verify가 더해 주는 효과 |
 
-세 arm이 **같은 retriever, 같은 generate 프롬프트**를 쓴다. 차이는 그래프 노드의 유무뿐이라 비교가 깨끗하다.
+세 구성은 같은 검색기와 같은 답변 프롬프트를 쓴다. 차이는 그래프 노드가 있고 없고뿐이므로 결과 차이를 그 노드들의 효과로 볼 수 있다.
 
 ## 검색 계층
 
 | 모드 | 구현 |
 |---|---|
-| `vector` | bge-m3 (1024d, 정규화) → Chroma cosine |
-| `bm25` | kiwipiepy 형태소 → 내용어만(명사·동사·수식언·숫자·영문) → rank_bm25 |
-| `bm25_ws` | 공백 분리 BM25 — 형태소 분석이 없는 플랫폼의 한국어 상태를 재현하는 ablation용 |
-| `hybrid` | vector·bm25 각 top-20을 RRF(k=60)로 합쳐 top-5 — 기본값 |
+| `vector` | bge-m3(1024차원, 정규화)로 임베딩해 Chroma에서 코사인 유사도로 찾는다 |
+| `bm25` | kiwipiepy로 형태소 분석을 하고 명사·동사·수식언·숫자·영문만 남겨 rank_bm25에 넣는다 |
+| `bm25_ws` | 공백으로만 자른 BM25. 형태소 분석이 없는 검색 플랫폼에서 한국어가 어떻게 되는지 보기 위한 비교용이다 |
+| `hybrid` | vector와 bm25에서 각각 상위 20개를 가져와 RRF(k=60)로 합치고 상위 5개를 쓴다. 기본값이다 |
 
-## LLM provider
+## LLM 연결
 
 | `LLM_PROVIDER` | 대상 | 비고 |
 |---|---|---|
-| `ollama` (기본) | 로컬. Qwen3 8B | 키 불필요. `num_ctx` 8192, think 끔 |
-| `anthropic` | Claude 직접 | Anthropic SDK |
-| `openai` | OpenAI 호환 엔드포인트 (vLLM · LiteLLM · 게이트웨이) | 동시 요청 4개 제한, 429·5xx 지수 백오프 |
+| `ollama` (기본) | 로컬 Ollama. Qwen3 8B | 키가 필요 없다. 컨텍스트 8192, 사고 모드는 끈다 |
+| `anthropic` | Claude | Anthropic SDK를 직접 쓴다 |
+| `openai` | OpenAI 호환 엔드포인트(vLLM, LiteLLM, 게이트웨이 등) | 동시 요청을 4개로 제한하고 429·5xx는 지수 백오프로 재시도한다 |
 
-모든 호출 temperature 0. grade·verify·rewrite는 JSON을 요구하되, 잘리거나 깨진 JSON에서도 필요한 키만 정규식으로 건지는 관대한 파서를 쓴다 (7B가 지시를 어기는 경우가 잦다).
+모든 호출은 temperature 0이다. grade·verify·rewrite는 JSON으로 답하게 하되, 7B 모델은 형식을 자주 어기므로 잘리거나 깨진 JSON에서도 필요한 키만 정규식으로 건지는 파서를 둔다.
+
+## API
+
+| 엔드포인트 | 설명 |
+|---|---|
+| `POST /ask` | `{q, mode?, k?, collection?}`를 받아 `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}`을 돌려준다. `mode`는 `graph`, `naive`, `none` 중 하나다 |
+| `POST /upload` | multipart로 PDF·HWPX 파일(`files[]`)과 `collection`(기본 `docs`)을 받아 파싱하고 색인에 추가한다. 이미 있는 청크는 다시 넣지 않는다 |
+| `GET /collections` | 검색할 수 있는 컬렉션과 각각의 청크 수 |
+| `GET /health` | 색인 크기, 모델, provider, 검색 모드 |
+| `GET /` | 화면 한 장(`static/index.html`). `?q=&mode=&collection=`을 주면 열리면서 바로 질문한다 |
+
+컬렉션은 색인의 단위다. `korquad`는 평가용이고 업로드한 문서는 `docs`나 새 이름의 컬렉션으로 들어간다. 서버는 컬렉션별로 청크·BM25·Chroma 핸들을 캐시하고 업로드 뒤에 비운다.
 
 ## 설계 결정
 
 | 결정 | 이유 |
 |---|---|
-| 청크 = KorQuAD 문단 그대로 | 정답 문단 id로 recall을 정확히 잰다. 고정 길이 청킹은 ablation 후보 |
-| bge-m3 로컬 임베딩 | 한국어 상위권, 키 불필요, 결정적 |
-| Chroma (embedded) | 서버 없이 파일로 재현. 운영이면 pgvector |
-| grade를 문서별 병렬로 | 5개를 한 프롬프트에 넣는 것보다 토큰 1/4, 7B에 더 정확. 대신 요청 수 5배 — 요청 수 제한이 있는 게이트웨이에선 batch가 맞다 |
-| verify 포함 | 사내문서 QA의 핵심 요구. 7B로는 무의미하다는 것도 결과 ([evaluation.md](evaluation.md)) |
-| `langgraph` 라이브러리만, 서버는 자체 FastAPI | `langgraph`는 MIT지만 `langgraph-api` 서버 런타임은 Elastic License라 프로덕션에 상용 키가 필요 |
-| Anthropic SDK / httpx 직접 | LangChain 래퍼 없이 — 프롬프트가 그대로 보인다 |
-| temperature 0, seed 고정, 문항별 결과 jsonl | 재현과 사후 분석 |
+| 청크를 KorQuAD 문단 그대로 쓴다 | 정답 문단의 id가 있으므로 recall을 정확히 잴 수 있다. 고정 길이로 자르는 방식은 다음 실험 후보다 |
+| 임베딩은 bge-m3를 로컬에서 돌린다 | 한국어 성능이 좋고 키가 필요 없으며 결과가 결정적이다 |
+| Chroma(embedded) | 서버 없이 파일만으로 재현할 수 있다. 운영 환경이라면 pgvector가 맞다 |
+| grade를 문단별로 나눠 병렬 호출한다 | 5개를 한 프롬프트에 넣는 것보다 토큰이 1/4이고 7B 모델의 판정이 더 정확하다. 대신 요청 수가 5배가 되므로 요청 수에 제한이 있는 게이트웨이에서는 한 번에 묶어 보내는 편이 낫다 |
+| verify를 넣는다 | 사내 문서 QA에서는 답에 근거가 있는지가 핵심 요구사항이다. 7B 모델로는 이 판정이 되지 않는다는 점도 실험으로 확인했다([evaluation.md](evaluation.md)) |
+| `langgraph` 라이브러리만 쓰고 서버는 FastAPI로 직접 만든다 | `langgraph`는 MIT지만 서버 런타임인 `langgraph-api`는 Elastic License여서 운영 배포에 상용 라이선스가 필요하다 |
+| Anthropic SDK와 httpx를 직접 쓴다 | LangChain 래퍼를 거치지 않으면 실제로 보내는 프롬프트가 코드에 그대로 보인다 |
+| temperature 0, seed 고정, 문항별 결과를 jsonl로 남긴다 | 재현과 사후 분석을 위해서다 |
 
-## API
-
-| | |
-|---|---|
-| `POST /ask` | `{q, mode?: graph\|naive\|none, k?, collection?}` → `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}` |
-| `POST /upload` | multipart `files[]`(PDF·HWPX) + `collection`(기본 `docs`) → 파싱·임베딩 후 컬렉션에 추가. 같은 내용은 중복되지 않음 |
-| `GET /collections` | 검색 가능한 컬렉션과 청크 수 |
-| `GET /health` | 인덱스 크기·모델·provider·검색 모드 |
-| `GET /` | UI 한 장 (`static/index.html`). `?q=&mode=&collection=`으로 바로 실행 |
-
-컬렉션은 인덱스 단위다. `korquad`는 평가용, 업로드는 `docs`(또는 새 이름)로 들어간다. 서버는 컬렉션별로 청크·BM25·Chroma 핸들을 캐시하고 업로드 뒤 비운다.
-
-## 프로덕션으로 가려면
+## 운영 환경으로 가져갈 때 바꿀 것
 
 | 지금 | 운영 |
 |---|---|
-| Chroma | pgvector (기존 Postgres) 또는 OpenSearch(BM25+kNN 내장) |
-| rank_bm25 메모리 | OpenSearch nori |
-| bge-m3 in-process | TEI 또는 vLLM `/v1/embeddings`로 분리 서빙 |
-| 권한 없음 | 문서별 ACL을 청크 메타데이터에 넣고 **검색 시** 필터 |
-| verify (7B) | 강한 모델 또는 규칙(인용 문단에 답 문자열 포함 여부) |
-| path[] 로그 | Langfuse / OpenTelemetry로 노드별 지연·토큰 |
-| 1회 평가 | 골든셋 + 지속 평가를 CI에 |
+| Chroma | pgvector(기존 Postgres를 쓸 수 있다) 또는 OpenSearch(BM25와 kNN을 함께 제공) |
+| rank_bm25(메모리) | OpenSearch nori 분석기 |
+| bge-m3를 프로세스 안에서 실행 | TEI나 vLLM의 `/v1/embeddings`로 분리해 서빙 |
+| 권한 처리 없음 | 문서별 접근 권한을 청크 메타데이터에 넣고 검색 단계에서 필터링 |
+| verify를 7B 모델이 수행 | 더 큰 모델에 맡기거나, 인용 문단에 답 문자열이 있는지 확인하는 규칙으로 대체 |
+| `path[]` 로그 | Langfuse나 OpenTelemetry로 노드별 지연과 토큰을 추적 |
+| 평가 1회 실행 | 골든셋을 두고 CI에서 지속적으로 평가 |
