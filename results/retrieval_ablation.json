@@ -1,0 +1,31 @@
+{
+  "vector": {
+    "recall@1": 0.707,
+    "recall@3": 0.858,
+    "recall@5": 0.892,
+    "recall@10": 0.92
+  },
+  "bm25_ws": {
+    "recall@1": 0.658,
+    "recall@3": 0.757,
+    "recall@5": 0.797,
+    "recall@10": 0.836
+  },
+  "bm25": {
+    "recall@1": 0.85,
+    "recall@3": 0.94,
+    "recall@5": 0.956,
+    "recall@10": 0.977
+  },
+  "hybrid": {
+    "recall@1": 0.786,
+    "recall@3": 0.924,
+    "recall@5": 0.952,
+    "recall@10": 0.979
+  },
+  "_meta": {
+    "n": 1000,
+    "seed": 20260903,
+    "embed_model": "BAAI/bge-m3"
+  }
+}
