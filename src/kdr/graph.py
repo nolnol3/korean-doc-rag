@@ -32,6 +32,7 @@ ABSTAIN = "문서에서 근거를 찾지 못했습니다."
 class State(TypedDict):
     question: str        # 원 질문 (불변)
     query: str           # 현재 검색 질의 (rewrite가 갱신)
+    collection: str      # 검색 대상 컬렉션
     docs: list[Hit]
     relevant: list[Hit]
     answer: str
@@ -46,7 +47,7 @@ class State(TypedDict):
 # ── 노드 ──────────────────────────────────────────────────────────────────────
 
 def n_retrieve(s: State) -> dict:
-    return {"docs": retrieve(s["query"]), "path": s["path"] + ["retrieve"]}
+    return {"docs": retrieve(s["query"], collection=s["collection"]), "path": s["path"] + ["retrieve"]}
 
 
 def _grade_one(question: str, d: Hit, usage: Usage) -> bool:
@@ -146,14 +147,14 @@ def build():
 _GRAPH = None
 
 
-def ask(question: str) -> Result:
+def ask(question: str, collection: str | None = None) -> Result:
     global _GRAPH
     if _GRAPH is None:
         _GRAPH = build()
     t0 = time.perf_counter()
     usage = Usage()
     s = _GRAPH.invoke({
-        "question": question, "query": question, "docs": [], "relevant": [],
+        "question": question, "query": question, "collection": collection or settings.collection, "docs": [], "relevant": [],
         "answer": "", "grounded": None, "attempts": 0, "tried": [], "seen_relevant": [], "path": [], "usage": usage,
     })
     return Result(

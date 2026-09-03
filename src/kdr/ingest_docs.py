@@ -145,6 +145,35 @@ def collect(paths: list[str]) -> list[Path]:
     return sorted(set(files))
 
 
+def add_files(files: list[Path], collection: str) -> dict:
+    """파일들을 파싱해 컬렉션에 **추가**한다 (기존 청크 유지, 같은 id는 중복 없이). 업로드 API가 쓴다."""
+    import json
+
+    new: list[Chunk] = []
+    per_file: dict[str, int] = {}
+    for f in files:
+        parser = PARSERS.get(f.suffix.lower())
+        if not parser:
+            continue
+        got = parser(f)
+        per_file[f.name] = len(got)
+        new += got
+    path = settings.chunks_path_for(collection)
+    existing: dict[str, Chunk] = {}
+    if path.exists():
+        with path.open() as fh:
+            for r in map(json.loads, fh):
+                existing[r["id"]] = Chunk(r["id"], r["title"], r["text"], r.get("meta"))
+    for c in new:
+        existing.setdefault(c.id, c)
+    chunks = list(existing.values())
+    settings.data_dir.mkdir(exist_ok=True)
+    write_jsonl(path, (asdict(c) for c in chunks))
+    build_bm25(chunks, collection)
+    build_vector(chunks, collection=collection)
+    return {"files": per_file, "added": len(new), "total": len(chunks), "collection": collection}
+
+
 def main(argv: list[str]) -> None:
     if settings.collection == "korquad":
         sys.exit("COLLECTION=korquad 는 KorQuAD 전용입니다. 예: COLLECTION=docs python -m kdr.ingest_docs ./my_docs")

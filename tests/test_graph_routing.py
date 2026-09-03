@@ -6,7 +6,7 @@ from kdr.graph import after_grade, after_verify
 
 
 def _state(**kw):
-    base = {"question": "q", "query": "q", "docs": [], "relevant": [], "answer": "",
+    base = {"question": "q", "query": "q", "collection": "korquad", "docs": [], "relevant": [], "answer": "",
             "grounded": None, "attempts": 0, "tried": [], "seen_relevant": [], "path": [], "usage": None}
     base.update(kw)
     return base

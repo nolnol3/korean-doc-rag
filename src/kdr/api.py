@@ -1,24 +1,32 @@
 """FastAPI 서비스.
 
-  POST /ask     {q, mode?: "graph"|"naive"|"none", k?}  → 답변·출처·실행 경로
-  GET  /health  인덱스 크기·모델·provider
-  GET  /        질문 입력창 하나짜리 HTML
-  GET  /docs    Swagger (자동)
+  POST /ask          {q, mode?, k?, collection?}  → 답변·출처·실행 경로
+  POST /upload       multipart files[] (+collection)  → PDF/HWPX 파싱 후 인덱스에 추가
+  GET  /collections  검색 가능한 컬렉션과 청크 수
+  GET  /health       인덱스·모델·provider
+  GET  /             UI (static/index.html)
+  GET  /docs         Swagger (자동)
 
 실행: uvicorn kdr.api:app --port 8000
 """
 from __future__ import annotations
 
+import re
+import shutil
 from dataclasses import asdict
+from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from kdr import baseline, graph
 from kdr.config import settings
 from kdr.llm import model_label
+
+STATIC = Path(__file__).parent / "static"
+_SAFE_NAME = re.compile(r"[^\w.\-가-힣 ]")
 
 app = FastAPI(title="korean-doc-rag", version="0.1.0")
 
@@ -27,6 +35,7 @@ class AskRequest(BaseModel):
     q: str = Field(min_length=1, max_length=500)
     mode: Literal["graph", "naive", "none"] = "graph"
     k: int | None = Field(default=None, ge=1, le=20)
+    collection: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_\-]{1,40}$")
 
 
 class Citation(BaseModel):
@@ -48,6 +57,26 @@ class AskResponse(BaseModel):
     latency_ms: int
     mode: str
     llm: str
+    collection: str
+
+
+def _collection_or_404(name: str | None) -> str:
+    from kdr.retriever import list_collections
+
+    name = name or settings.collection
+    if name not in list_collections():
+        raise HTTPException(404, f"collection '{name}' not found — 업로드하거나 make index")
+    return name
+
+
+@app.get("/collections")
+def collections() -> list[dict]:
+    from kdr.retriever import _client
+
+    out = []
+    for c in _client().list_collections():
+        out.append({"name": c.name, "chunks": c.count(), "default": c.name == settings.collection})
+    return sorted(out, key=lambda x: (not x["default"], x["name"]))
 
 
 @app.get("/health")
@@ -55,7 +84,7 @@ def health() -> dict:
     from kdr.retriever import _chunks
 
     try:
-        n = len(_chunks())
+        n = len(_chunks(settings.collection))
     except FileNotFoundError:
         raise HTTPException(503, "index not built — run: make index")
     return {"status": "ok", "chunks": n, "llm": model_label(), "provider": settings.llm_provider,
@@ -64,50 +93,51 @@ def health() -> dict:
 
 @app.post("/ask", response_model=AskResponse)
 def ask(req: AskRequest) -> AskResponse:
+    col = _collection_or_404(req.collection) if req.mode != "none" else (req.collection or settings.collection)
     try:
         if req.mode == "graph":
-            r = graph.ask(req.q)
+            r = graph.ask(req.q, collection=col)
         elif req.mode == "naive":
-            r = baseline.ask(req.q, k=req.k)
+            r = baseline.ask(req.q, k=req.k, collection=col)
         else:
             r = baseline.ask_no_retrieval(req.q)
     except FileNotFoundError:
         raise HTTPException(503, "index not built — run: make index")
     except RuntimeError as e:  # API 키 없음 등 설정 문제
         raise HTTPException(503, str(e))
-    return AskResponse(**asdict(r), mode=req.mode, llm=model_label())
+    return AskResponse(**asdict(r), mode=req.mode, llm=model_label(), collection=col)
 
 
-_PAGE = """<!doctype html><meta charset="utf-8"><title>korean-doc-rag</title>
-<style>
-body{font:15px/1.5 -apple-system,system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 16px;color:#222}
-input,select,button{font:inherit;padding:8px 10px}input{width:100%%;box-sizing:border-box}
-.row{display:flex;gap:8px;margin:12px 0}.ans{font-size:18px;margin:16px 0;padding:12px;background:#f5f7fa;border-radius:6px}
-.path span{display:inline-block;background:#e8eef7;border-radius:4px;padding:2px 8px;margin:2px 4px 2px 0;font-size:13px}
-.cite{border-left:3px solid #cbd5e1;padding:6px 10px;margin:8px 0;font-size:14px;color:#444}.cite b{color:#222}
-.meta{color:#777;font-size:13px}
-</style>
-<h2>korean-doc-rag</h2>
-<p class=meta>KorQuAD 1.0 문단 10,639개 · 답변은 문서 근거와 함께 · 실행 경로 표시</p>
-<input id=q placeholder="질문을 입력하세요" value="구룡폭포의 높이는?">
-<div class=row><select id=mode><option value=graph>graph (LangGraph)</option><option value=naive>naive RAG</option><option value=none>LLM only</option></select>
-<button onclick=go()>질문</button></div>
-<div id=out></div>
-<script>
-async function go(){const o=document.getElementById('out');o.innerHTML='<p class=meta>생성 중…</p>';
-const r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},
- body:JSON.stringify({q:document.getElementById('q').value,mode:document.getElementById('mode').value})});
-if(!r.ok){o.innerHTML='<p style="color:#b00">'+(await r.text())+'</p>';return}
-const d=await r.json();
-o.innerHTML='<div class=ans>'+esc(d.answer)+'</div>'
- +'<div class=path>'+d.path.map(p=>'<span>'+esc(p)+'</span>').join('')+'</div>'
- +'<p class=meta>grounded='+d.grounded+' · attempts='+d.attempts+' · calls='+d.usage.calls+' · '+d.latency_ms+'ms · '+esc(d.llm)+'</p>'
- +d.citations.map(c=>'<div class=cite><b>['+c.n+'] '+esc(c.title)+'</b> <span class=meta>'+c.score+'</span><br>'+esc(c.text)+'</div>').join('');}
-function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
-const u=new URLSearchParams(location.search);if(u.get('q')){document.getElementById('q').value=u.get('q');if(u.get('mode'))document.getElementById('mode').value=u.get('mode');go();}
-</script>"""
+@app.post("/upload")
+def upload(files: list[UploadFile] = File(...), collection: str = Form("docs")) -> dict:
+    """PDF/HWPX를 받아 파싱하고 컬렉션에 추가한다. 같은 내용은 중복 추가되지 않는다."""
+    from kdr.ingest_docs import PARSERS, add_files
+    from kdr.retriever import invalidate
+
+    if not re.fullmatch(r"[A-Za-z0-9_\-]{1,40}", collection) or collection == "korquad":
+        raise HTTPException(400, "collection 이름은 영문·숫자·_·- 만, korquad 는 예약")
+    dest = settings.uploads_dir / collection
+    dest.mkdir(parents=True, exist_ok=True)
+    saved: list[Path] = []
+    for f in files:
+        name = _SAFE_NAME.sub("_", Path(f.filename or "file").name)
+        if Path(name).suffix.lower() not in PARSERS:
+            raise HTTPException(415, f"{name}: PDF 또는 HWPX만 받습니다")
+        path = dest / name
+        with path.open("wb") as out:
+            shutil.copyfileobj(f.file, out, length=1 << 20)
+        if path.stat().st_size > 50 << 20:
+            path.unlink()
+            raise HTTPException(413, f"{name}: 50MB 초과")
+        saved.append(path)
+    try:
+        result = add_files(saved, collection)
+    except Exception as e:
+        raise HTTPException(500, f"파싱 실패: {type(e).__name__}: {str(e)[:200]}")
+    invalidate(collection)
+    return result
 
 
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return _PAGE
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(STATIC / "index.html")

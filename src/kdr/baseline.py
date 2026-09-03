@@ -30,10 +30,10 @@ def _citations(hits: list[Hit]) -> list[dict]:
     return [{"n": i + 1, "id": h.id, "title": h.title, "text": h.text, "score": round(h.score, 4)} for i, h in enumerate(hits)]
 
 
-def ask(question: str, k: int | None = None, mode: str | None = None) -> Result:
+def ask(question: str, k: int | None = None, mode: str | None = None, collection: str | None = None) -> Result:
     t0 = time.perf_counter()
     usage = Usage()
-    hits = retrieve(question, k=k, mode=mode)
+    hits = retrieve(question, k=k, mode=mode, collection=collection)
     answer = complete(
         GENERATE_SYSTEM,
         GENERATE_USER.format(context=render_context(hits), question=question),

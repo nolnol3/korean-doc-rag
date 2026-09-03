@@ -65,36 +65,39 @@ def write_jsonl(path, rows) -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
-def build_bm25(chunks: list[Chunk]) -> None:
+def build_bm25(chunks: list[Chunk], collection: str | None = None) -> None:
     """kiwi 형태소 BM25(본선)와 공백 분리 BM25(ablation)를 둘 다 만든다."""
-    kiwi_corpus = [tokenize_kiwi(c.text) for c in tqdm(chunks, desc="kiwi tokenize")]
+    kiwi_corpus = [tokenize_kiwi(c.text) for c in tqdm(chunks, desc="kiwi tokenize", disable=len(chunks) < 50)]
     ws_corpus = [tokenize_ws(c.text) for c in chunks]
     payload = {
         "ids": [c.id for c in chunks],
         "kiwi": BM25Okapi(kiwi_corpus),
         "ws": BM25Okapi(ws_corpus),
     }
-    with settings.bm25_path.open("wb") as f:
+    with settings.bm25_path_for(collection).open("wb") as f:
         pickle.dump(payload, f)
 
 
-def build_vector(chunks: list[Chunk], rebuild: bool = False) -> None:
+def build_vector(chunks: list[Chunk], rebuild: bool = False, collection: str | None = None) -> None:
     from sentence_transformers import SentenceTransformer
 
+    name = collection or settings.collection
     client = chromadb.PersistentClient(path=str(settings.chroma_dir))
     if rebuild:
         try:
-            client.delete_collection(settings.collection)
+            client.delete_collection(name)
         except Exception:
             pass
-    col = client.get_or_create_collection(settings.collection, metadata={"hnsw:space": "cosine"})
-    # id 집합이 같을 때만 건너뛴다 (개수만 보면 내용이 바뀐 걸 놓친다)
-    if col.count() == len(chunks) and set(col.get(include=[])["ids"]) == {c.id for c in chunks}:
+    col = client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"})
+    # 이미 있는 id는 건너뛰고 없는 것만 임베딩한다 (업로드로 조금씩 추가하는 경우)
+    existing = set(col.get(include=[])["ids"]) if col.count() else set()
+    chunks = [c for c in chunks if c.id not in existing]
+    if not chunks:
         print(f"chroma: {col.count()} chunks already indexed, skip")
         return
     model = SentenceTransformer(settings.embed_model)
     batch = 64
-    for i in tqdm(range(0, len(chunks), batch), desc="embed"):
+    for i in tqdm(range(0, len(chunks), batch), desc="embed", disable=len(chunks) < 64):
         part = chunks[i : i + batch]
         emb = model.encode([c.text for c in part], normalize_embeddings=True, batch_size=batch)
         col.upsert(

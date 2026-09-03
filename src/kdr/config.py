@@ -31,12 +31,19 @@ class Settings(BaseSettings):
     def raw_dir(self) -> Path:
         return self.data_dir / "raw"
 
-    def _suffix(self) -> str:
-        return "" if self.collection == "korquad" else f".{self.collection}"
+    def _suffix(self, collection: str | None = None) -> str:
+        c = collection or self.collection
+        return "" if c == "korquad" else f".{c}"
+
+    def chunks_path_for(self, collection: str | None = None) -> Path:
+        return self.data_dir / f"chunks{self._suffix(collection)}.jsonl"
+
+    def bm25_path_for(self, collection: str | None = None) -> Path:
+        return self.data_dir / f"bm25{self._suffix(collection)}.pkl"
 
     @property
     def chunks_path(self) -> Path:
-        return self.data_dir / f"chunks{self._suffix()}.jsonl"
+        return self.chunks_path_for()
 
     @property
     def questions_path(self) -> Path:
@@ -44,7 +51,11 @@ class Settings(BaseSettings):
 
     @property
     def bm25_path(self) -> Path:
-        return self.data_dir / f"bm25{self._suffix()}.pkl"
+        return self.bm25_path_for()
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.data_dir / "uploads"
 
 
 settings = Settings()

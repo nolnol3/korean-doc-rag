@@ -1,11 +1,14 @@
 # PDF · HWPX 문서 넣기
 
-```bash
-COLLECTION=docs python -m kdr.ingest_docs ./my_docs/     # 디렉토리 또는 파일 여러 개
-COLLECTION=docs make serve
-```
+세 가지 방법. 모두 KorQuAD와 분리된 컬렉션(기본 `docs`)에 들어간다.
 
-`COLLECTION`으로 KorQuAD 실험과 분리된 인덱스를 쓴다. 다시 실행하면 그 컬렉션을 처음부터 다시 만든다(지운 문서가 남지 않게).
+| 방법 | 언제 |
+|---|---|
+| UI "문서 넣기"에 끌어다 놓기 | 몇 개 넣고 바로 물어볼 때 |
+| `POST /upload` (multipart `files[]`, `collection`) | 다른 시스템에서 붙일 때. 기존 청크는 유지, 같은 내용은 중복 안 됨 |
+| `COLLECTION=docs python -m kdr.ingest_docs ./dir/` | 대량. 그 컬렉션을 처음부터 다시 만든다(지운 문서가 남지 않게) |
+
+질문할 때 `collection`을 지정한다 — UI의 컬렉션 선택, API의 `{"collection": "docs"}`.
 
 ## 무엇을 하나
 

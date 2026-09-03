@@ -75,6 +75,18 @@
 | Anthropic SDK / httpx 직접 | LangChain 래퍼 없이 — 프롬프트가 그대로 보인다 |
 | temperature 0, seed 고정, 문항별 결과 jsonl | 재현과 사후 분석 |
 
+## API
+
+| | |
+|---|---|
+| `POST /ask` | `{q, mode?: graph\|naive\|none, k?, collection?}` → `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}` |
+| `POST /upload` | multipart `files[]`(PDF·HWPX) + `collection`(기본 `docs`) → 파싱·임베딩 후 컬렉션에 추가. 같은 내용은 중복되지 않음 |
+| `GET /collections` | 검색 가능한 컬렉션과 청크 수 |
+| `GET /health` | 인덱스 크기·모델·provider·검색 모드 |
+| `GET /` | UI 한 장 (`static/index.html`). `?q=&mode=&collection=`으로 바로 실행 |
+
+컬렉션은 인덱스 단위다. `korquad`는 평가용, 업로드는 `docs`(또는 새 이름)로 들어간다. 서버는 컬렉션별로 청크·BM25·Chroma 핸들을 캐시하고 업로드 뒤 비운다.
+
 ## 프로덕션으로 가려면
 
 | 지금 | 운영 |

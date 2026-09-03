@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>korean-doc-rag</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css">
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#fff;--ink:#1a1d23;--muted:#6b7280;--line:#e5e7eb;--soft:#eef2f7;
+  --brand:#2f5bea;--brand-ink:#fff;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--chip:#e8eef7;--chip-ink:#2f4a8a;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1115;--panel:#171a21;--ink:#e6e8ee;--muted:#9aa3b2;--line:#262b36;--soft:#1f2430;
+  --brand:#5b7cff;--chip:#233052;--chip-ink:#b9c7ff;--shadow:0 1px 2px rgba(0,0,0,.4);
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+a{color:var(--brand)}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;font-size:17px;letter-spacing:-.01em}
+.brand span{color:var(--muted);font-weight:500;margin-left:10px;font-size:13px}
+.status{display:flex;gap:8px;font-size:12.5px;color:var(--muted)}
+.status b{color:var(--ink);font-weight:600}
+.pill{padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--soft)}
+main{max-width:1120px;margin:0 auto;padding:24px 28px 60px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.ask{padding:20px}
+.ask h1{font-size:20px;margin:0 0 4px;letter-spacing:-.01em}
+.ask p.sub{margin:0 0 16px;color:var(--muted);font-size:13.5px}
+textarea{width:100%;min-height:76px;resize:vertical;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+textarea:focus{outline:2px solid var(--brand);outline-offset:0;border-color:transparent}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg)}
+.seg button{border:0;background:transparent;color:var(--muted);padding:8px 12px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button.on{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:inset 0 0 0 1px var(--line)}
+select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;font-size:13.5px}
+.btn{border:0;border-radius:10px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer;background:var(--brand);color:var(--brand-ink)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.ghost{background:var(--soft);color:var(--ink)}
+.samples{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.samples button{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:5px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+.samples button:hover{color:var(--ink);border-color:var(--brand)}
+.side{padding:18px}
+.side h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.drop{border:1.5px dashed var(--line);border-radius:12px;padding:22px 14px;text-align:center;color:var(--muted);font-size:13.5px;cursor:pointer;transition:.15s}
+.drop.over{border-color:var(--brand);background:var(--soft);color:var(--ink)}
+.drop b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
+.files{list-style:none;padding:0;margin:10px 0 0;font-size:13px}
+.files li{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)}
+.files li span:last-child{color:var(--muted)}
+.note{font-size:12.5px;color:var(--muted);margin-top:10px}
+.result{margin-top:20px;display:none}
+.answer{padding:22px 24px}
+.answer .q{color:var(--muted);font-size:13px;margin-bottom:6px}
+.answer .a{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.4}
+.answer .a.abstain{color:var(--muted);font-weight:500}
+.path{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:16px}
+.step{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:8px;background:var(--chip);color:var(--chip-ink);font-size:12.5px;font-weight:600}
+.step.ok{background:#dcfce7;color:#166534}.step.warn{background:#fef3c7;color:#92400e}.step.bad{background:#fee2e2;color:#991b1b}.step.mute{background:var(--soft);color:var(--muted)}
+@media (prefers-color-scheme:dark){.step.ok{background:#14532d;color:#bbf7d0}.step.warn{background:#78350f;color:#fde68a}.step.bad{background:#7f1d1d;color:#fecaca}}
+.arrow{color:var(--muted);font-size:12px}
+.meta{margin-top:12px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:14px}
+.meta b{color:var(--ink);font-weight:600}
+.cites{margin-top:16px;display:grid;gap:10px}
+.cite{padding:14px 16px;border-left:3px solid var(--brand)}
+.cite .h{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13.5px}
+.cite .n{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;background:var(--brand);color:#fff;font-size:12px;font-weight:700}
+.cite .t{font-weight:600}
+.cite .k{font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--soft);color:var(--muted)}
+.cite .s{margin-left:auto;color:var(--muted);font-size:12px}
+.cite .body{color:var(--ink);opacity:.85;font-size:13.5px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cite.open .body{display:block}
+.cite .more{border:0;background:none;color:var(--brand);font:inherit;font-size:12.5px;padding:4px 0 0;cursor:pointer}
+.skel{height:14px;border-radius:6px;background:linear-gradient(90deg,var(--soft),var(--line),var(--soft));background-size:200% 100%;animation:sh 1.2s infinite}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.loading{padding:22px 24px}
+.loading .t{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:12px}
+.alert{padding:14px 16px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:13.5px;margin-top:16px;display:none}
+@media (prefers-color-scheme:dark){.alert{background:#7f1d1d;color:#fecaca}}
+footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">korean-doc-rag <span>근거를 인용해서 답하는 한국어 문서 QA</span></div>
+  <div class="status" id="status"><span class="pill">연결 중…</span></div>
+</header>
+<main>
+  <div class="grid">
+    <section class="card ask">
+      <h1>문서에 질문하기</h1>
+      <p class="sub">검색된 문단만 근거로 답합니다. 근거가 없으면 지어내지 않고 "찾지 못했다"고 답합니다.</p>
+      <textarea id="q" placeholder="예) 구룡폭포의 높이는?"></textarea>
+      <div class="row">
+        <div class="seg" id="mode">
+          <button data-v="graph" class="on" title="검색 → 관련성 판정 → 재검색 → 답변 → 근거 검증">그래프 RAG</button>
+          <button data-v="naive" title="검색 → 답변">단순 RAG</button>
+          <button data-v="none" title="검색 없이 모델 지식만">LLM만</button>
+        </div>
+        <select id="col" title="검색 대상 컬렉션"></select>
+        <button class="btn" id="go">질문</button>
+      </div>
+      <div class="samples" id="samples"></div>
+    </section>
+    <aside class="card side">
+      <h2>문서 넣기</h2>
+      <div class="drop" id="drop">
+        <b>PDF · HWPX를 끌어다 놓기</b>
+        또는 클릭해서 선택. 표는 표로 보존됩니다.
+        <input type="file" id="file" accept=".pdf,.hwpx" multiple hidden>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <select id="upcol" style="flex:1"></select>
+        <button class="btn ghost" id="upload" disabled>추가</button>
+      </div>
+      <ul class="files" id="files"></ul>
+      <div class="note" id="upnote">업로드한 문서는 <b>docs</b> 컬렉션에 들어가고, 질문 시 컬렉션을 고르면 됩니다.</div>
+    </aside>
+  </div>
+
+  <div class="alert" id="alert"></div>
+
+  <section class="card loading" id="loading" style="display:none">
+    <div class="t"><span id="ltxt">검색하고 답을 쓰는 중…</span><span id="lclock">0.0s</span></div>
+    <div class="skel" style="width:60%;height:22px"></div>
+    <div class="skel" style="width:40%;margin-top:14px"></div>
+    <div class="skel" style="width:90%;margin-top:22px"></div>
+    <div class="skel" style="width:85%;margin-top:8px"></div>
+  </section>
+
+  <section class="result" id="result">
+    <div class="card answer">
+      <div class="q" id="rq"></div>
+      <div class="a" id="ra"></div>
+      <div class="path" id="rpath"></div>
+      <div class="meta" id="rmeta"></div>
+    </div>
+    <div class="cites" id="rcites"></div>
+  </section>
+  <footer>bge-m3 + kiwi BM25 hybrid · LangGraph · 로컬 Ollama — <a href="/docs">API 문서</a></footer>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const SAMPLES={korquad:["구룡폭포의 높이는?","금강산의 총 면적은?","캐나다에서 1975년까지 가장 크고 영향력 있는 회사는?","강정호가 아시아인 최초로 20홈런을 기록한 해는?"],
+               docs:["5년 이상 근속하면 연차가 며칠인가?","미사용 연차의 이월 한도는?","커머스 부문의 매출 비중과 주요 제품은?"]};
+let mode="graph", pending=[];
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function loadStatus(){
+  try{
+    const h=await (await fetch("/health")).json();
+    $("#status").innerHTML=`<span class="pill">LLM <b>${esc(h.llm)}</b></span><span class="pill">검색 <b>${esc(h.retrieval_mode)}</b></span><span class="pill">임베딩 <b>${esc(h.embed_model.split("/").pop())}</b></span>`;
+  }catch{ $("#status").innerHTML=`<span class="pill">서버 연결 실패</span>`; }
+  await loadCollections();
+}
+async function loadCollections(keep){
+  const cols=await (await fetch("/collections")).json();
+  const opts=cols.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} · ${c.chunks.toLocaleString()} 청크</option>`).join("");
+  const cur=keep||$("#col").value||(cols.find(c=>c.default)||cols[0]||{}).name;
+  $("#col").innerHTML=opts; if(cur) $("#col").value=cur;
+  const up=cols.filter(c=>c.name!=="korquad").map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("")+`<option value="__new__">새 컬렉션…</option>`;
+  $("#upcol").innerHTML=up; if(!cols.some(c=>c.name==="docs")) $("#upcol").insertAdjacentHTML("afterbegin",`<option value="docs">docs</option>`);
+  $("#upcol").value=$("#upcol").querySelector('option[value="docs"]')?"docs":$("#upcol").options[0].value;
+  renderSamples();
+}
+function renderSamples(){
+  const list=SAMPLES[$("#col").value]||[];
+  $("#samples").innerHTML=list.map(q=>`<button>${esc(q)}</button>`).join("");
+  $("#samples").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("#q").value=b.textContent;ask();});
+}
+$("#col").onchange=renderSamples;
+$("#mode").querySelectorAll("button").forEach(b=>b.onclick=()=>{mode=b.dataset.v;$("#mode").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));});
+
+function stepChip(p){
+  const [name,arg]=p.split(/:(.*)/s);
+  const L={retrieve:"검색",grade:"관련성 판정",generate:"답변 생성",verify:"근거 검증",rewrite:"질의 재작성",abstain:"근거 없음",stop:"정지"};
+  let cls="",label=L[name]||name;
+  if(name==="grade") label+=` ${arg}`;
+  if(name==="verify") {cls=arg==="ok"?"ok":arg==="abstain"?"mute":"bad"; label+=arg==="ok"?" ✓":arg==="fail"?" ✗":"";}
+  if(name==="rewrite") {cls="warn"; label+=arg&&arg!=="dup"?` “${arg}”`:arg==="dup"?" (중복)":"";}
+  if(name==="abstain"||name==="stop") cls="mute";
+  return `<span class="step ${cls}">${esc(label)}</span>`;
+}
+function showError(m){$("#alert").style.display="block";$("#alert").textContent=m;}
+function hideError(){$("#alert").style.display="none";}
+
+async function ask(){
+  const q=$("#q").value.trim(); if(!q) return;
+  hideError(); $("#result").style.display="none"; $("#loading").style.display="block"; $("#go").disabled=true;
+  $("#ltxt").textContent=mode==="none"?"모델이 답을 쓰는 중…":mode==="naive"?"검색하고 답을 쓰는 중…":"검색 → 관련성 판정 → 답변 → 근거 검증 중…";
+  const t0=performance.now(); const clock=setInterval(()=>$("#lclock").textContent=((performance.now()-t0)/1000).toFixed(1)+"s",100);
+  try{
+    const r=await fetch("/ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({q,mode,collection:$("#col").value})});
+    if(!r.ok){ let m=`${r.status}`; try{m=(await r.json()).detail||m;}catch{} throw new Error(m); }
+    render(await r.json());
+  }catch(e){ showError("실패: "+e.message); }
+  finally{ clearInterval(clock); $("#loading").style.display="none"; $("#go").disabled=false; }
+}
+function render(d){
+  $("#rq").textContent=d.question;
+  const abst=/근거를 찾지 못했습니다|모르겠습니다/.test(d.answer);
+  $("#ra").textContent=d.answer; $("#ra").classList.toggle("abstain",abst);
+  $("#rpath").innerHTML=d.path.map(stepChip).join(`<span class="arrow">›</span>`);
+  const g=d.grounded===null?"—":d.grounded?"예":"아니오";
+  $("#rmeta").innerHTML=`<span>근거 검증 <b>${g}</b></span><span>시도 <b>${d.attempts}</b></span><span>LLM 호출 <b>${d.usage.calls}</b></span><span>지연 <b>${(d.latency_ms/1000).toFixed(1)}s</b></span><span>모델 <b>${esc(d.llm)}</b></span><span>컬렉션 <b>${esc(d.collection)}</b></span>`;
+  $("#rcites").innerHTML=d.citations.length?d.citations.map(c=>{
+    const isT=c.text.startsWith("[표]");
+    return `<div class="card cite"><div class="h"><span class="n">${c.n}</span><span class="t">${esc(c.title)}</span>${isT?'<span class="k">표</span>':""}<span class="s">${c.score.toFixed(3)}</span></div><div class="body">${esc(c.text)}</div><button class="more" onclick="this.parentElement.classList.toggle('open');this.textContent=this.parentElement.classList.contains('open')?'접기':'더 보기'">더 보기</button></div>`;
+  }).join(""):`<div class="note">${d.mode==="none"?"검색 없이 모델 지식만으로 답했습니다 — 출처 없음.":"인용된 문단이 없습니다."}</div>`;
+  $("#result").style.display="block";
+}
+$("#go").onclick=ask;
+$("#q").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();ask();}});
+
+// ── 업로드 ──
+const drop=$("#drop"), fileIn=$("#file");
+drop.onclick=()=>fileIn.click();
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over");}));
+drop.addEventListener("drop",e=>queue([...e.dataTransfer.files]));
+fileIn.onchange=()=>queue([...fileIn.files]);
+function queue(fs){
+  const ok=fs.filter(f=>/\.(pdf|hwpx)$/i.test(f.name));
+  if(ok.length<fs.length) showError("PDF 또는 HWPX만 받습니다."); else hideError();
+  pending=pending.concat(ok); renderFiles(); $("#upload").disabled=!pending.length;
+}
+function renderFiles(rows){
+  $("#files").innerHTML=(rows||pending.map(f=>({name:f.name,info:(f.size/1024).toFixed(0)+" KB"}))).map(r=>`<li><span>${esc(r.name)}</span><span>${esc(r.info)}</span></li>`).join("");
+}
+$("#upcol").onchange=()=>{ if($("#upcol").value==="__new__"){ const n=prompt("새 컬렉션 이름 (영문·숫자·_·-)"); if(n&&/^[A-Za-z0-9_\-]{1,40}$/.test(n)&&n!=="korquad"){$("#upcol").insertAdjacentHTML("afterbegin",`<option value="${n}">${n}</option>`);$("#upcol").value=n;} else $("#upcol").value=$("#upcol").options[0].value; } };
+$("#upload").onclick=async()=>{
+  if(!pending.length) return;
+  const fd=new FormData(); pending.forEach(f=>fd.append("files",f)); fd.append("collection",$("#upcol").value);
+  $("#upload").disabled=true; $("#upload").textContent="파싱·임베딩 중…"; hideError();
+  try{
+    const r=await fetch("/upload",{method:"POST",body:fd});
+    if(!r.ok){ let m=`${r.status}`; try{m=(await r.json()).detail||m;}catch{} throw new Error(m); }
+    const d=await r.json();
+    renderFiles(Object.entries(d.files).map(([n,c])=>({name:n,info:c+" 청크"})));
+    $("#upnote").innerHTML=`<b>${esc(d.collection)}</b> 컬렉션에 ${d.added}개 청크 추가 (총 ${d.total}). 아래에서 바로 질문해 보세요.`;
+    pending=[]; await loadCollections(d.collection); $("#col").value=d.collection; renderSamples();
+  }catch(e){ showError("업로드 실패: "+e.message); }
+  finally{ $("#upload").textContent="추가"; $("#upload").disabled=!pending.length; }
+};
+
+// ── URL로 바로 실행 (?q=&mode=&collection=) ──
+loadStatus().then(()=>{
+  const u=new URLSearchParams(location.search);
+  if(u.get("mode")){mode=u.get("mode");$("#mode").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.v===mode));}
+  if(u.get("collection")){$("#col").value=u.get("collection");renderSamples();}
+  if(u.get("q")){$("#q").value=u.get("q");ask();}
+});
+</script>
+</body>
+</html>

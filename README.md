@@ -16,9 +16,9 @@ A: 17일 [2]
 
 | KorQuAD 200문항, Qwen3 8B | EM | F1 |
 |---|---|---|
-| LLM만 | 0.035 | 0.252 |
-| 단순 RAG | 0.695 | 0.825 |
-| **그래프 RAG** | **0.730** | **0.863** |
+| LLM만 | 0.045 | 0.263 |
+| 단순 RAG | 0.720 | 0.840 |
+| **그래프 RAG** | **0.725** | **0.860** |
 
 왜 이런 숫자가 나왔는지, 무엇이 효과가 있었고 무엇이 없었는지는 [docs/evaluation.md](docs/evaluation.md).
 
@@ -58,12 +58,15 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 
 **내 문서 넣기** — PDF, HWPX
 
+UI 오른쪽 "문서 넣기"에 끌어다 놓으면 파싱·임베딩 후 바로 질문할 수 있다. 같은 일을 API로:
+
 ```bash
-COLLECTION=docs python -m kdr.ingest_docs ./my_docs/
-COLLECTION=docs make serve
+curl -F files=@report.pdf -F files=@policy.hwpx -F collection=docs localhost:8000/upload
+curl -X POST localhost:8000/ask -H 'content-type: application/json' \
+     -d '{"q": "5년 이상 근속하면 연차가 며칠인가?", "collection": "docs"}'
 ```
 
-자세한 건 [docs/documents.md](docs/documents.md).
+대량이면 CLI: `COLLECTION=docs python -m kdr.ingest_docs ./my_docs/`. 자세한 건 [docs/documents.md](docs/documents.md).
 
 **다른 LLM** — `.env`
 
@@ -89,7 +92,7 @@ make eval        # LLM만 / 단순 RAG / 그래프 RAG × 200문항
 | [docs/architecture.md](docs/architecture.md) | 그래프 노드와 분기, 검색 계층, 설계 결정, 프로덕션 경로 |
 | [docs/evaluation.md](docs/evaluation.md) | 결과표, 발견 4가지, 실패 사례, 한계 |
 | [docs/documents.md](docs/documents.md) | PDF·HWPX 인제스트와 한계 |
-| [results/](results/) | 문항별 결과(jsonl), 실패 분석 |
+| [results/](results/) | 집계표, 검색 ablation, 실패 분석. 문항별 jsonl은 `make eval`로 재생성 (KorQuAD 원문 포함이라 미배포) |
 
 ## 라이선스
 

@@ -24,3 +24,6 @@ results/_v2_prompt_examples/
 # 테스트 fixture 바이너리는 생성 스크립트로 만든다 (make fixtures)
 tests/fixtures/*.pdf
 tests/fixtures/*.hwpx
+
+# 문항별 결과(jsonl)는 KorQuAD 원문(CC BY-ND)을 포함하므로 레포에 넣지 않는다 — make eval 로 재생성
+results/**/*.jsonl
