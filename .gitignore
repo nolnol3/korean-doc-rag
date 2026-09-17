@@ -1,9 +1,10 @@
 # 로컬 전용 설계·메모 — 공개 레포에 올리지 않음 (docs/는 공개)
 notes/
 
-# 데이터·인덱스 (fetch/ingest로 재생성)
+# 데이터·인덱스·OCR 모델 캐시 (fetch/ingest/첫 OCR 때 재생성)
 data/
 .chroma/
+.easyocr/
 *.bm25.pkl
 
 # python
@@ -27,3 +28,4 @@ tests/fixtures/*.hwpx
 
 # 문항별 결과(jsonl)는 KorQuAD 원문(CC BY-ND)을 포함하므로 레포에 넣지 않는다 — make eval 로 재생성
 results/**/*.jsonl
+tests/fixtures/*.png

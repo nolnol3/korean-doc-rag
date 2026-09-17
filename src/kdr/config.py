@@ -23,8 +23,17 @@ class Settings(BaseSettings):
     top_k: int = 5
     max_attempts: int = 2
 
+    # OCR — 텍스트 레이어가 없는 PDF 페이지와 PNG/JPG 파일에만 적용 (easyocr, 선택 설치)
+    ocr_enabled: bool = True
+    ocr_langs: str = "ko,en"
+    ocr_dpi: int = 200
+    ocr_min_conf: float = 0.3  # 이 신뢰도 미만 상자는 버린다
+    ocr_min_chars: int = 30  # 페이지 텍스트 레이어가 이보다 짧으면 스캔으로 보고 OCR
+    ocr_gpu: bool = False  # CUDA 있을 때만 True. MPS는 easyocr 미지원
+
     data_dir: Path = ROOT / "data"
     chroma_dir: Path = ROOT / ".chroma"
+    ocr_model_dir: Path = ROOT / ".easyocr"
     collection: str = "korquad"
 
     @property

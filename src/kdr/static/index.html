@@ -109,9 +109,9 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
     <aside class="card side">
       <h2>문서 넣기</h2>
       <div class="drop" id="drop">
-        <b>PDF · HWPX를 끌어다 놓기</b>
+        <b>PDF · HWPX · 이미지를 끌어다 놓기</b>
         또는 클릭해서 선택. 표는 표로 보존됩니다.
-        <input type="file" id="file" accept=".pdf,.hwpx" multiple hidden>
+        <input type="file" id="file" accept=".pdf,.hwpx,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp" multiple hidden>
       </div>
       <div class="row" style="margin-top:10px">
         <select id="upcol" style="flex:1"></select>
@@ -224,8 +224,8 @@ drop.onclick=()=>fileIn.click();
 drop.addEventListener("drop",e=>queue([...e.dataTransfer.files]));
 fileIn.onchange=()=>queue([...fileIn.files]);
 function queue(fs){
-  const ok=fs.filter(f=>/\.(pdf|hwpx)$/i.test(f.name));
-  if(ok.length<fs.length) showError("PDF 또는 HWPX만 받습니다."); else hideError();
+  const ok=fs.filter(f=>/\.(pdf|hwpx|png|jpe?g|webp|tiff?|bmp)$/i.test(f.name));
+  if(ok.length<fs.length) showError("PDF, HWPX 또는 이미지(PNG/JPG)만 받습니다."); else hideError();
   pending=pending.concat(ok); renderFiles(); $("#upload").disabled=!pending.length;
 }
 function renderFiles(rows){

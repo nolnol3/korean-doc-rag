@@ -13,10 +13,11 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
       RETRIEVAL_MODE: ${RETRIEVAL_MODE:-hybrid}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
     volumes:
       - ./data:/app/data
       - ./.chroma:/app/.chroma
-      - hf-cache:/app/.hf
+      - hf-cache:/app/.hf          # 임베딩 모델 + OCR 모델 캐시
     extra_hosts:
       - "host.docker.internal:host-gateway"
 volumes:

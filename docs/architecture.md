@@ -68,7 +68,7 @@ LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 �
 | 엔드포인트 | 설명 |
 |---|---|
 | `POST /ask` | `{q, mode?, k?, collection?}`를 받아 `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}`을 돌려준다. `mode`는 `graph`, `naive`, `none` 중 하나다 |
-| `POST /upload` | multipart로 PDF·HWPX 파일(`files[]`)과 `collection`(기본 `docs`)을 받아 파싱하고 색인에 추가한다. 이미 있는 청크는 다시 넣지 않는다 |
+| `POST /upload` | multipart로 PDF·HWPX·이미지 파일(`files[]`)과 `collection`(기본 `docs`)을 받아 파싱하고(스캔 페이지·이미지는 OCR) 색인에 추가한다. 이미 있는 청크는 다시 넣지 않는다 |
 | `GET /collections` | 검색할 수 있는 컬렉션과 각각의 청크 수 |
 | `GET /health` | 색인 크기, 모델, provider, 검색 모드 |
 | `GET /` | 화면 한 장(`static/index.html`). `?q=&mode=&collection=`을 주면 열리면서 바로 질문한다 |

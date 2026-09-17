@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
+ocr = ["easyocr>=1.7"]  # 스캔 PDF·이미지 — 한국어 인식, torch 공유
 
 [build-system]
 requires = ["hatchling"]

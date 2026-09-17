@@ -1,9 +1,12 @@
 PY := .venv/bin/python
 
-.PHONY: setup fetch index ask ablation eval serve test lint reproduce
+.PHONY: setup fixtures fetch index ask ablation eval serve test lint reproduce
 
-setup:            ## venv + deps
-	uv venv -q --python 3.11 .venv && uv pip install -q -e ".[dev]"
+setup:            ## venv + deps (OCR 포함. OCR 없이: uv pip install -e ".[dev]")
+	uv venv -q --python 3.11 .venv && uv pip install -q -e ".[dev,ocr]"
+
+fixtures:         ## 테스트용 PDF·HWPX·스캔 샘플 생성 (tests/fixtures)
+	$(PY) tests/fixtures/make_sample_pdf.py && $(PY) tests/fixtures/make_sample_hwpx.py && $(PY) tests/fixtures/make_sample_scan.py
 
 fetch:            ## KorQuAD 원본 내려받기 (data/raw, gitignore)
 	$(PY) scripts/fetch_data.py

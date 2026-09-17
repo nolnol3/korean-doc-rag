@@ -1,4 +1,4 @@
-"""PDF · HWPX 문서 → 페이지·표 단위 청크 → 'docs' 컬렉션.
+"""PDF · HWPX · 이미지 문서 → 페이지·표 단위 청크 → 'docs' 컬렉션.
 
   python -m kdr.ingest_docs path/to/dir_or_file [...]
   COLLECTION=docs make serve        # 이 컬렉션으로 서비스
@@ -6,10 +6,12 @@
 표는 markdown으로 보존해 청크 하나로 넣는다. 본문은 페이지 안에서 문단을 합쳐 400~900자.
 인용 제목은 "파일명 p.N" — API 응답의 citations.title 에 그대로 나온다.
 HWP 5.0(구형 바이너리)은 다루지 않는다. HWPX(zip+XML)만.
+텍스트 레이어가 없는 PDF 페이지(스캔)와 PNG/JPG 는 OCR(kdr.ocr)로 읽는다. kind="ocr". easyocr 이 없으면 건너뛰고 경고한다.
 """
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import sys
 import zipfile
@@ -19,8 +21,10 @@ from xml.etree import ElementTree as ET
 
 from kdr.config import settings
 from kdr.ingest import Chunk, build_bm25, build_vector, write_jsonl
+from kdr.ocr import OCRUnavailable, ocr_image, ocr_pdf_page
 
 MIN, MAX = 400, 900
+log = logging.getLogger(__name__)
 
 
 def _cid(*parts: str) -> str:
@@ -85,10 +89,36 @@ def parse_pdf(path: Path) -> list[Chunk]:
                 txt = re.sub(r"[ \t]+", " ", txt.replace("\n", " ")).strip()
                 if len(txt) >= 2:
                     paras.append(txt)
+            kind = "text"
+            if sum(map(len, paras)) < settings.ocr_min_chars and not table_rects:
+                # 텍스트 레이어가 없다 — 스캔 페이지. 렌더링해서 OCR
+                ocr = _ocr_or_skip(ocr_pdf_page, page, title=title)
+                if ocr is not None:
+                    paras, kind = ocr, "ocr"
             for i, text in enumerate(_pack(paras)):
-                chunks.append(Chunk(_cid(name, str(pno), "text", str(i), text), title, text,
-                                    {"source": name, "page": pno, "kind": "text"}))
+                chunks.append(Chunk(_cid(name, str(pno), kind, str(i), text), title, text,
+                                    {"source": name, "page": pno, "kind": kind}))
     return chunks
+
+
+# ── 이미지 (OCR) ──────────────────────────────────────────────────────────────
+
+def _ocr_or_skip(fn, arg, *, title: str) -> list[str] | None:
+    """fn(arg)로 OCR을 시도한다. 꺼져 있거나 easyocr 이 없으면 None (해당 페이지는 텍스트 없이 남는다)."""
+    if not settings.ocr_enabled:
+        return None
+    try:
+        return fn(arg)
+    except OCRUnavailable as e:
+        log.warning("%s: OCR 건너뜀 — %s", title, e)
+        return None
+
+
+def parse_image(path: Path) -> list[Chunk]:
+    name = path.name
+    paras = _ocr_or_skip(ocr_image, path, title=name) or []
+    return [Chunk(_cid(name, "1", "ocr", str(i), text), name, text, {"source": name, "page": 1, "kind": "ocr"})
+            for i, text in enumerate(_pack(paras))]
 
 
 # ── HWPX ──────────────────────────────────────────────────────────────────────
@@ -135,7 +165,8 @@ def parse_hwpx(path: Path) -> list[Chunk]:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-PARSERS = {".pdf": parse_pdf, ".hwpx": parse_hwpx}
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")
+PARSERS = {".pdf": parse_pdf, ".hwpx": parse_hwpx, **{e: parse_image for e in IMAGE_EXTS}}
 
 
 def collect(paths: list[str]) -> list[Path]:
@@ -179,12 +210,13 @@ def main(argv: list[str]) -> None:
         sys.exit("COLLECTION=korquad 는 KorQuAD 전용입니다. 예: COLLECTION=docs python -m kdr.ingest_docs ./my_docs")
     files = collect(argv)
     if not files:
-        sys.exit("PDF/HWPX 파일이 없습니다")
+        sys.exit("PDF/HWPX/이미지 파일이 없습니다")
     chunks: list[Chunk] = []
     for f in files:
         got = PARSERS[f.suffix.lower()](f)
         n_tbl = sum(1 for c in got if c.meta and c.meta["kind"] == "table")
-        print(f"{f.name}: {len(got)} chunks ({n_tbl} tables)")
+        n_ocr = sum(1 for c in got if c.meta and c.meta["kind"] == "ocr")
+        print(f"{f.name}: {len(got)} chunks ({n_tbl} tables, {n_ocr} ocr)")
         chunks += got
     settings.data_dir.mkdir(exist_ok=True)
     write_jsonl(settings.chunks_path, (asdict(c) for c in chunks))

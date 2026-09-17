@@ -1,7 +1,7 @@
 """FastAPI 서비스.
 
   POST /ask          {q, mode?, k?, collection?}  → 답변·출처·실행 경로
-  POST /upload       multipart files[] (+collection)  → PDF/HWPX 파싱 후 인덱스에 추가
+  POST /upload       multipart files[] (+collection)  → PDF/HWPX/이미지 파싱(스캔·이미지는 OCR) 후 인덱스에 추가
   GET  /collections  검색 가능한 컬렉션과 청크 수
   GET  /health       인덱스·모델·provider
   GET  /             UI (static/index.html)
@@ -110,7 +110,7 @@ def ask(req: AskRequest) -> AskResponse:
 
 @app.post("/upload")
 def upload(files: list[UploadFile] = File(...), collection: str = Form("docs")) -> dict:
-    """PDF/HWPX를 받아 파싱하고 컬렉션에 추가한다. 같은 내용은 중복 추가되지 않는다."""
+    """PDF/HWPX/이미지를 받아 파싱하고 컬렉션에 추가한다. 스캔 PDF·이미지는 OCR. 같은 내용은 중복 추가되지 않는다."""
     from kdr.ingest_docs import PARSERS, add_files
     from kdr.retriever import invalidate
 
@@ -122,7 +122,7 @@ def upload(files: list[UploadFile] = File(...), collection: str = Form("docs")) 
     for f in files:
         name = _SAFE_NAME.sub("_", Path(f.filename or "file").name)
         if Path(name).suffix.lower() not in PARSERS:
-            raise HTTPException(415, f"{name}: PDF 또는 HWPX만 받습니다")
+            raise HTTPException(415, f"{name}: PDF, HWPX 또는 이미지(PNG/JPG)만 받습니다")
         path = dest / name
         with path.open("wb") as out:
             shutil.copyfileobj(f.file, out, length=1 << 20)

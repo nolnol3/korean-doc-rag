@@ -12,7 +12,7 @@ A: 17일 [2]
 - 검색은 벡터 검색(bge-m3)과 형태소 기반 BM25(kiwi)를 함께 씁니다. 한국어는 조사가 붙기 때문에 형태소 분석 없이 BM25를 쓰면 recall이 16%p 떨어집니다.
 - 답변 흐름은 LangGraph로 구성했습니다. 검색 → 관련성 판정 → (관련 문서가 없으면 질의를 고쳐 재검색) → 답변 생성 → 근거 검증 순서입니다.
 - 로컬 모델(Ollama)로 동작하므로 API 키가 없어도 실행할 수 있습니다. Claude나 OpenAI 호환 엔드포인트도 설정으로 붙일 수 있습니다.
-- PDF와 HWPX 파일을 올려서 질문할 수 있습니다. 문서 안의 표는 행과 열 구조를 유지한 채로 색인되므로 표 안의 값을 정확히 찾아 답합니다.
+- PDF와 HWPX 파일을 올려서 질문할 수 있습니다. 문서 안의 표는 행과 열 구조를 유지한 채로 색인되므로 표 안의 값을 정확히 찾아 답합니다. 스캔한 PDF와 이미지(PNG/JPG)는 OCR(EasyOCR, 한국어)로 읽습니다.
 
 | KorQuAD 200문항, Qwen3 8B | EM | F1 |
 |---|---|---|
@@ -56,12 +56,12 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 
 `mode`에 `naive`(단순 RAG)나 `none`(검색 없이 LLM만)을 주면 같은 질문을 다른 방식으로 처리한 결과를 비교해 볼 수 있습니다.
 
-**문서 올리기 (PDF, HWPX)**
+**문서 올리기 (PDF, HWPX, 이미지)**
 
-화면 오른쪽 "문서 넣기" 영역에 파일을 끌어다 놓으면 파싱과 임베딩이 끝난 뒤 바로 질문할 수 있습니다. API로는 다음과 같이 합니다.
+화면 오른쪽 "문서 넣기" 영역에 파일을 끌어다 놓으면 파싱과 임베딩이 끝난 뒤 바로 질문할 수 있습니다. 텍스트 레이어가 없는 스캔 PDF와 PNG/JPG는 OCR을 거칩니다(첫 실행 때 모델 약 100MB를 내려받습니다). API로는 다음과 같이 합니다.
 
 ```bash
-curl -F files=@report.pdf -F files=@policy.hwpx -F collection=docs localhost:8000/upload
+curl -F files=@report.pdf -F files=@policy.hwpx -F files=@scan.png -F collection=docs localhost:8000/upload
 curl -X POST localhost:8000/ask -H 'content-type: application/json' \
      -d '{"q": "5년 이상 근속하면 연차가 며칠인가?", "collection": "docs"}'
 ```
@@ -93,7 +93,7 @@ make eval        # LLM만 / 단순 RAG / 그래프 RAG, 각 200문항
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | 그래프의 노드와 분기, 검색 계층, API, 설계 결정, 운영 환경으로 가져갈 때 바꿀 것 |
 | [docs/evaluation.md](docs/evaluation.md) | 결과표, 실험에서 확인한 것 네 가지, 실패 사례, 한계 |
-| [docs/documents.md](docs/documents.md) | PDF·HWPX 처리 방식과 한계 |
+| [docs/documents.md](docs/documents.md) | PDF·HWPX·스캔/이미지(OCR) 처리 방식과 한계 |
 | [results/](results/) | 집계표, 검색 ablation, 실패 분석. 문항별 jsonl은 KorQuAD 원문을 포함하므로 배포하지 않으며 `make eval`로 다시 만들 수 있습니다 |
 
 ## 라이선스
