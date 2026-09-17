@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     top_k: int = 5
     max_attempts: int = 2
 
+    # 문서 청크 (PDF·HWPX·OCR 본문). 글자 수 기준. KorQuAD는 문단 그대로라 해당 없음
+    chunk_size: int = 900
+    chunk_overlap: int = 100
+
     # OCR — 텍스트 레이어가 없는 PDF 페이지와 PNG/JPG 파일에만 적용 (easyocr, 선택 설치)
     ocr_enabled: bool = True
     ocr_langs: str = "ko,en"

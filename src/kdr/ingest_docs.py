@@ -3,13 +3,14 @@
   python -m kdr.ingest_docs path/to/dir_or_file [...]
   COLLECTION=docs make serve        # 이 컬렉션으로 서비스
 
-표는 markdown으로 보존해 청크 하나로 넣는다. 본문은 페이지 안에서 문단을 합쳐 400~900자.
+표는 markdown으로 보존해 청크 하나로 넣는다. 본문은 페이지 안에서 문단을 합쳐 최대 900자(문장 경계, 100자 overlap).
 인용 제목은 "파일명 p.N" — API 응답의 citations.title 에 그대로 나온다.
 HWP 5.0(구형 바이너리)은 다루지 않는다. HWPX(zip+XML)만.
 텍스트 레이어가 없는 PDF 페이지(스캔)와 PNG/JPG 는 OCR(kdr.ocr)로 읽는다. kind="ocr". easyocr 이 없으면 건너뛰고 경고한다.
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import logging
 import re
@@ -19,11 +20,12 @@ from dataclasses import asdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from kdr.config import settings
 from kdr.ingest import Chunk, build_bm25, build_vector, write_jsonl
 from kdr.ocr import OCRUnavailable, ocr_image, ocr_pdf_page
 
-MIN, MAX = 400, 900
 log = logging.getLogger(__name__)
 
 
@@ -31,29 +33,20 @@ def _cid(*parts: str) -> str:
     return hashlib.sha1("\n".join(parts).encode()).hexdigest()[:16]  # 마지막 인자에 본문을 넣어 내용 변경이 id에 반영되게
 
 
+# 한국어 문장 종결("다. ", "요. ")을 문단 다음 우선순위로 둔다. 기본 separators 에는 문장 경계가 없어 단어 중간이 잘린다.
+_SEPARATORS = ["\n\n", "\n", "다. ", "요. ", ". ", " ", ""]
+
+
+@functools.lru_cache(maxsize=1)
+def _splitter() -> RecursiveCharacterTextSplitter:
+    return RecursiveCharacterTextSplitter(separators=_SEPARATORS, chunk_size=settings.chunk_size,
+                                          chunk_overlap=settings.chunk_overlap, keep_separator="end")
+
+
 def _pack(paras: list[str]) -> list[str]:
-    """문단들을 MIN~MAX 자 청크로 합친다. 너무 긴 문단은 문장 경계에서 자른다."""
-    out, buf = [], ""
-    for p in paras:
-        p = p.strip()
-        if not p:
-            continue
-        if len(buf) + len(p) + 1 <= MAX:
-            buf = f"{buf}\n{p}" if buf else p
-            continue
-        if buf:
-            out.append(buf)
-        while len(p) > MAX:
-            cut = max(p.rfind(". ", 0, MAX), p.rfind("다. ", 0, MAX), MAX)
-            out.append(p[:cut + 1].strip())
-            p = p[cut + 1:].strip()
-        buf = p
-    if buf:
-        if out and len(buf) < MIN and len(out[-1]) + len(buf) <= MAX + MIN:
-            out[-1] += "\n" + buf
-        else:
-            out.append(buf)
-    return out
+    """문단들을 chunk_size 이하 청크로 묶는다. 짧은 문단은 합치고, 긴 문단은 문장 경계에서 자르며, 경계마다 chunk_overlap 만큼 겹친다."""
+    text = "\n\n".join(p.strip() for p in paras if p.strip())
+    return _splitter().split_text(text) if text else []
 
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
