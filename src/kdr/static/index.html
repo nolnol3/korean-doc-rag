@@ -79,8 +79,14 @@ select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;backgrou
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .loading{padding:22px 24px}
 .loading .t{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:12px}
-.alert{padding:14px 16px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:13.5px;margin-top:16px;display:none}
-@media (prefers-color-scheme:dark){.alert{background:#7f1d1d;color:#fecaca}}
+.alert{padding:14px 16px;border-radius:10px;background:#fee2e2;color:#991b1b;font-size:13.5px;margin-top:16px;display:none;white-space:pre-line}
+.alert.warn{background:#fef3c7;color:#92400e}
+@media (prefers-color-scheme:dark){.alert{background:#7f1d1d;color:#fecaca}.alert.warn{background:#78350f;color:#fde68a}}
+.files li .tag{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--soft);color:var(--muted);margin-left:6px}
+.files li .tag.ocr{background:#ede9fe;color:#5b21b6}.files li.empty span:last-child{color:#b45309}
+@media (prefers-color-scheme:dark){.files li .tag.ocr{background:#4c1d95;color:#ddd6fe}}
+.cite .k.ocr{background:#ede9fe;color:#5b21b6}
+@media (prefers-color-scheme:dark){.cite .k.ocr{background:#4c1d95;color:#ddd6fe}}
 footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
 </style>
 </head>
@@ -110,7 +116,7 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
       <h2>문서 넣기</h2>
       <div class="drop" id="drop">
         <b>PDF · HWPX · 이미지를 끌어다 놓기</b>
-        또는 클릭해서 선택. 표는 표로 보존됩니다.
+        또는 클릭해서 선택. 표는 표로 보존되고, 스캔 PDF와 PNG/JPG는 OCR로 읽습니다<span id="ocrhint"></span>.
         <input type="file" id="file" accept=".pdf,.hwpx,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp" multiple hidden>
       </div>
       <div class="row" style="margin-top:10px">
@@ -141,7 +147,7 @@ footer{margin-top:40px;color:var(--muted);font-size:12.5px;text-align:center}
     </div>
     <div class="cites" id="rcites"></div>
   </section>
-  <footer>bge-m3 + kiwi BM25 hybrid · LangGraph · 로컬 Ollama · <a href="/docs">API 문서</a></footer>
+  <footer>bge-m3 + kiwi BM25 hybrid + cross-encoder rerank · LangGraph · EasyOCR · 로컬 Ollama · <a href="/docs">API 문서</a></footer>
 </main>
 <script>
 const $=s=>document.querySelector(s);
@@ -153,7 +159,9 @@ const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt
 async function loadStatus(){
   try{
     const h=await (await fetch("/health")).json();
-    $("#status").innerHTML=`<span class="pill">LLM <b>${esc(h.llm)}</b></span><span class="pill">검색 <b>${esc(h.retrieval_mode)}</b></span><span class="pill">임베딩 <b>${esc(h.embed_model.split("/").pop())}</b></span>`;
+    const o=h.ocr||{}; const ocrTxt=!o.enabled?"꺼짐":!o.available?"미설치":"켜짐";
+    $("#status").innerHTML=`<span class="pill">LLM <b>${esc(h.llm)}</b></span><span class="pill">검색 <b>${esc(h.retrieval_mode)}</b></span><span class="pill">임베딩 <b>${esc(h.embed_model.split("/").pop())}</b></span><span class="pill" title="스캔 PDF·이미지 인식 (easyocr)">OCR <b>${ocrTxt}</b></span>`;
+    $("#ocrhint").textContent=!o.enabled?" (지금은 OCR이 꺼져 있어 스캔·이미지는 빈 채로 들어갑니다)":!o.available?" (easyocr 미설치 — 스캔·이미지는 빈 채로 들어갑니다)":" (페이지당 약 5초)";
   }catch{ $("#status").innerHTML=`<span class="pill">서버 연결 실패</span>`; }
   await loadCollections();
 }
@@ -178,14 +186,14 @@ $("#mode").querySelectorAll("button").forEach(b=>b.onclick=()=>{mode=b.dataset.v
 function stepChip(p){
   const [name,arg]=p.split(/:(.*)/s);
   const L={retrieve:"검색",grade:"관련성 판정",generate:"답변 생성",verify:"근거 검증",rewrite:"질의 재작성",abstain:"근거 없음",stop:"정지"};
-  let cls="",label=L[name]||name;
-  if(name==="grade") label+=` ${arg}`;
+  let cls="",label=L[name]||name,title="";
+  if(name==="grade"){ const m=/^rerank:(.*)$/.exec(arg||""); label+=` ${m?m[1]:arg}`; if(m) title="cross-encoder 점수(≥0.2)로 판정 — LLM 호출 없음"; }
   if(name==="verify") {cls=arg==="ok"?"ok":arg==="abstain"?"mute":"bad"; label+=arg==="ok"?" ✓":arg==="fail"?" ✗":"";}
   if(name==="rewrite") {cls="warn"; label+=arg&&arg!=="dup"?` “${arg}”`:arg==="dup"?" (중복)":"";}
   if(name==="abstain"||name==="stop") cls="mute";
-  return `<span class="step ${cls}">${esc(label)}</span>`;
+  return `<span class="step ${cls}" title="${esc(title)}">${esc(label)}</span>`;
 }
-function showError(m){$("#alert").style.display="block";$("#alert").textContent=m;}
+function showError(m){$("#alert").style.display="block";$("#alert").className="alert";$("#alert").textContent=m;}
 function hideError(){$("#alert").style.display="none";}
 
 async function ask(){
@@ -208,8 +216,9 @@ function render(d){
   const g=d.grounded===null?"—":d.grounded?"예":"아니오";
   $("#rmeta").innerHTML=`<span>근거 검증 <b>${g}</b></span><span>시도 <b>${d.attempts}</b></span><span>LLM 호출 <b>${d.usage.calls}</b></span><span>지연 <b>${(d.latency_ms/1000).toFixed(1)}s</b></span><span>모델 <b>${esc(d.llm)}</b></span><span>컬렉션 <b>${esc(d.collection)}</b></span>`;
   $("#rcites").innerHTML=d.citations.length?d.citations.map(c=>{
-    const isT=c.text.startsWith("[표]");
-    return `<div class="card cite"><div class="h"><span class="n">${c.n}</span><span class="t">${esc(c.title)}</span>${isT?'<span class="k">표</span>':""}<span class="s">${c.score.toFixed(3)}</span></div><div class="body">${esc(c.text)}</div><button class="more" onclick="this.parentElement.classList.toggle('open');this.textContent=this.parentElement.classList.contains('open')?'접기':'더 보기'">더 보기</button></div>`;
+    const kind=c.kind||(c.text.startsWith("[표]")?"table":null);
+    const badge=kind==="table"?'<span class="k">표</span>':kind==="ocr"?'<span class="k ocr" title="스캔·이미지를 OCR로 읽은 텍스트 — 오인식이 있을 수 있습니다">OCR</span>':"";
+    return `<div class="card cite"><div class="h"><span class="n">${c.n}</span><span class="t">${esc(c.title)}</span>${badge}<span class="s">${c.score.toFixed(3)}</span></div><div class="body">${esc(c.text)}</div><button class="more" onclick="this.parentElement.classList.toggle('open');this.textContent=this.parentElement.classList.contains('open')?'접기':'더 보기'">더 보기</button></div>`;
   }).join(""):`<div class="note">${d.mode==="none"?"검색 없이 모델 지식만으로 답했으므로 출처가 없습니다.":"인용된 문단이 없습니다."}</div>`;
   $("#result").style.display="block";
 }
@@ -228,23 +237,35 @@ function queue(fs){
   if(ok.length<fs.length) showError("PDF, HWPX 또는 이미지(PNG/JPG)만 받습니다."); else hideError();
   pending=pending.concat(ok); renderFiles(); $("#upload").disabled=!pending.length;
 }
+const isImg=n=>/\.(png|jpe?g|webp|tiff?|bmp)$/i.test(n);
 function renderFiles(rows){
-  $("#files").innerHTML=(rows||pending.map(f=>({name:f.name,info:(f.size/1024).toFixed(0)+" KB"}))).map(r=>`<li><span>${esc(r.name)}</span><span>${esc(r.info)}</span></li>`).join("");
+  rows=rows||pending.map(f=>({name:f.name,info:(f.size/1024).toFixed(0)+" KB",tag:isImg(f.name)?"OCR":""}));
+  $("#files").innerHTML=rows.map(r=>`<li class="${r.empty?"empty":""}"><span>${esc(r.name)}${r.tag?`<span class="tag ${r.tag==="OCR"?"ocr":""}">${esc(r.tag)}</span>`:""}</span><span>${esc(r.info)}</span></li>`).join("");
 }
+function showWarn(m){$("#alert").style.display="block";$("#alert").className="alert warn";$("#alert").textContent=m;}
 $("#upcol").onchange=()=>{ if($("#upcol").value==="__new__"){ const n=prompt("새 컬렉션 이름 (영문·숫자·_·-)"); if(n&&/^[A-Za-z0-9_\-]{1,40}$/.test(n)&&n!=="korquad"){$("#upcol").insertAdjacentHTML("afterbegin",`<option value="${n}">${n}</option>`);$("#upcol").value=n;} else $("#upcol").value=$("#upcol").options[0].value; } };
 $("#upload").onclick=async()=>{
   if(!pending.length) return;
   const fd=new FormData(); pending.forEach(f=>fd.append("files",f)); fd.append("collection",$("#upcol").value);
-  $("#upload").disabled=true; $("#upload").textContent="파싱·임베딩 중…"; hideError();
+  const hasImg=pending.some(f=>isImg(f.name));
+  const label=hasImg?"OCR·임베딩 중…":"파싱·임베딩 중…";
+  $("#upload").disabled=true; hideError();
+  const t0=performance.now(); const clock=setInterval(()=>$("#upload").textContent=`${label} ${((performance.now()-t0)/1000).toFixed(0)}s`,500);
+  $("#upload").textContent=label;
   try{
     const r=await fetch("/upload",{method:"POST",body:fd});
     if(!r.ok){ let m=`${r.status}`; try{m=(await r.json()).detail||m;}catch{} throw new Error(m); }
     const d=await r.json();
-    renderFiles(Object.entries(d.files).map(([n,c])=>({name:n,info:c+" 청크"})));
-    $("#upnote").innerHTML=`<b>${esc(d.collection)}</b> 컬렉션에 ${d.added}개 청크 추가 (총 ${d.total}). 아래에서 바로 질문해 보세요.`;
-    pending=[]; await loadCollections(d.collection); $("#col").value=d.collection; renderSamples();
+    renderFiles(Object.entries(d.files).map(([n,c])=>{
+      const parts=[`${c.chunks} 청크`]; if(c.tables) parts.push(`표 ${c.tables}`); if(c.ocr) parts.push(`OCR ${c.ocr}`);
+      return {name:n,info:c.chunks?parts.join(" · "):"0 청크",tag:c.ocr?"OCR":"",empty:!c.chunks};
+    }));
+    const nOcr=Object.values(d.files).reduce((a,c)=>a+c.ocr,0);
+    $("#upnote").innerHTML=`<b>${esc(d.collection)}</b> 컬렉션에 ${d.added}개 청크 추가 (총 ${d.total})${nOcr?`, 그중 OCR ${nOcr}개`:""}. ${((performance.now()-t0)/1000).toFixed(1)}s. 아래에서 바로 질문해 보세요.`;
+    if(d.warnings&&d.warnings.length) showWarn("일부 파일에서 텍스트를 얻지 못했습니다:\n"+d.warnings.join("\n"));
+    pending=[]; await loadCollections(d.collection); $("#col").value=d.collection; $("#upcol").value=d.collection; renderSamples();
   }catch(e){ showError("업로드 실패: "+e.message); }
-  finally{ $("#upload").textContent="추가"; $("#upload").disabled=!pending.length; }
+  finally{ clearInterval(clock); $("#upload").textContent="추가"; $("#upload").disabled=!pending.length; }
 };
 
 // ── URL로 바로 실행 (?q=&mode=&collection=) ──

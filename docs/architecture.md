@@ -74,10 +74,10 @@ LLM 호출 수는 기본 구성에서 가장 적을 때 2회(generate + verify),
 
 | 엔드포인트 | 설명 |
 |---|---|
-| `POST /ask` | `{q, mode?, k?, collection?}`를 받아 `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}`을 돌려준다. `mode`는 `graph`, `naive`, `none` 중 하나다 |
-| `POST /upload` | multipart로 PDF·HWPX·이미지 파일(`files[]`)과 `collection`(기본 `docs`)을 받아 파싱하고(스캔 페이지·이미지는 OCR) 색인에 추가한다. 이미 있는 청크는 다시 넣지 않는다 |
+| `POST /ask` | `{q, mode?, k?, collection?}`를 받아 `{answer, citations[], path[], grounded, attempts, usage, latency_ms, mode, llm, collection}`을 돌려준다. `mode`는 `graph`, `naive`, `none` 중 하나다. `citations[].kind`는 문서 청크의 종류(`text`, `table`, `ocr`)로 화면의 배지에 쓴다 |
+| `POST /upload` | multipart로 PDF·HWPX·이미지 파일(`files[]`)과 `collection`(기본 `docs`)을 받아 파싱하고(스캔 페이지·이미지는 OCR) 색인에 추가한다. 이미 있는 청크는 다시 넣지 않는다. 응답은 `{files: {이름: {chunks, tables, ocr}}, warnings[], added, total, collection}` — `warnings`에는 청크가 0개인 파일과 그 이유(OCR 꺼짐·미설치·인식 실패)가 들어간다 |
 | `GET /collections` | 검색할 수 있는 컬렉션과 각각의 청크 수 |
-| `GET /health` | 색인 크기, 모델, provider, 검색 모드 |
+| `GET /health` | 인덱스 청크 수, LLM, 검색·grade 모드, OCR 상태(`{enabled, available, langs}`) |
 | `GET /` | 화면 한 장(`static/index.html`). `?q=&mode=&collection=`을 주면 열리면서 바로 질문한다 |
 
 컬렉션은 색인의 단위다. `korquad`는 평가용이고 업로드한 문서는 `docs`나 새 이름의 컬렉션으로 들어간다. 서버는 컬렉션별로 청크·BM25·Chroma 핸들을 캐시하고 업로드 뒤에 비운다.

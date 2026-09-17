@@ -29,6 +29,7 @@ class Hit:
     text: str
     score: float
     rerank: float | None = None  # hybrid_rerank 일 때 cross-encoder 점수
+    kind: str | None = None  # 문서 청크: text | table | ocr. KorQuAD 는 None
 
 
 @lru_cache(maxsize=8)
@@ -73,7 +74,7 @@ def _embedder():
 
 def _hit(col: str, cid: str, score: float) -> Hit:
     c = _chunks(col)[cid]
-    return Hit(cid, c["title"], c["text"], float(score))
+    return Hit(cid, c["title"], c["text"], float(score), kind=(c.get("meta") or {}).get("kind"))
 
 
 # 프로세스 안의 모든 로컬 모델 forward(bge-m3, cross-encoder)가 공유하는 락.
@@ -126,5 +127,5 @@ def retrieve(query: str, k: int | None = None, mode: str | None = None, collecti
 
         docs = rerank_retriever(col, k).invoke(query)
         return [Hit(d.metadata["id"], d.metadata["title"], d.page_content, d.metadata["rerank_score"],
-                    rerank=d.metadata["rerank_score"]) for d in docs]
+                    rerank=d.metadata["rerank_score"], kind=d.metadata.get("kind")) for d in docs]
     raise ValueError(f"unknown retrieval mode: {mode}")

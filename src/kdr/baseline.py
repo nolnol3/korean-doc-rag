@@ -27,7 +27,8 @@ class Result:
 
 
 def _citations(hits: list[Hit]) -> list[dict]:
-    return [{"n": i + 1, "id": h.id, "title": h.title, "text": h.text, "score": round(h.score, 4)} for i, h in enumerate(hits)]
+    return [{"n": i + 1, "id": h.id, "title": h.title, "text": h.text, "score": round(h.score, 4), "kind": h.kind}
+            for i, h in enumerate(hits)]
 
 
 def ask(question: str, k: int | None = None, mode: str | None = None, collection: str | None = None) -> Result:

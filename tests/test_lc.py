@@ -15,7 +15,7 @@ def test_kdr_retriever_wraps_retrieve_as_documents(monkeypatch):
     monkeypatch.setattr(kdr.retriever, "retrieve", _fake_retrieve)
     docs = lc.KdrRetriever(collection="c", k=3).invoke("q")
     assert [type(d) for d in docs] == [Document] * 3
-    assert docs[0].metadata == {"id": "id0", "title": "t0", "score": 1.0}
+    assert docs[0].metadata == {"id": "id0", "title": "t0", "score": 1.0, "kind": None}
     assert docs[0].page_content == "text 0 q"
 
 

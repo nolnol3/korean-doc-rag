@@ -23,7 +23,7 @@ from kdr.retriever import model_lock
 
 
 def to_document(h) -> Document:  # h: retriever.Hit (순환 import 회피)
-    return Document(page_content=h.text, metadata={"id": h.id, "title": h.title, "score": h.score})
+    return Document(page_content=h.text, metadata={"id": h.id, "title": h.title, "score": h.score, "kind": h.kind})
 
 
 class KdrRetriever(BaseRetriever):

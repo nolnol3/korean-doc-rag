@@ -20,6 +20,15 @@ class OCRUnavailable(RuntimeError):
     pass
 
 
+def available() -> bool:
+    """easyocr 이 import 되는가 (모델은 로드하지 않는다). /health 와 업로드 경고가 쓴다."""
+    try:
+        import easyocr  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 @functools.lru_cache(maxsize=1)
 def _reader():
     try:

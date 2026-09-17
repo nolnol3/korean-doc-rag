@@ -44,6 +44,7 @@ class Citation(BaseModel):
     title: str
     text: str
     score: float
+    kind: str | None = None  # text | table | ocr (문서 컬렉션), KorQuAD 는 null
 
 
 class AskResponse(BaseModel):
@@ -87,8 +88,12 @@ def health() -> dict:
         n = len(_chunks(settings.collection))
     except FileNotFoundError:
         raise HTTPException(503, "index not built — run: make index")
+    from kdr.ocr import available as ocr_available
+
     return {"status": "ok", "chunks": n, "llm": model_label(), "provider": settings.llm_provider,
-            "embed_model": settings.embed_model, "retrieval_mode": settings.retrieval_mode}
+            "embed_model": settings.embed_model, "retrieval_mode": settings.retrieval_mode,
+            "grade_mode": settings.grade_mode,
+            "ocr": {"enabled": settings.ocr_enabled, "available": ocr_available(), "langs": settings.ocr_langs}}
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -110,7 +115,9 @@ def ask(req: AskRequest) -> AskResponse:
 
 @app.post("/upload")
 def upload(files: list[UploadFile] = File(...), collection: str = Form("docs")) -> dict:
-    """PDF/HWPX/이미지를 받아 파싱하고 컬렉션에 추가한다. 스캔 PDF·이미지는 OCR. 같은 내용은 중복 추가되지 않는다."""
+    """PDF/HWPX/이미지를 받아 파싱하고 컬렉션에 추가한다. 스캔 PDF·이미지는 OCR. 같은 내용은 중복 추가되지 않는다.
+
+    응답: {files: {이름: {chunks, tables, ocr}}, warnings: [청크 0개인 파일의 이유], added, total, collection}"""
     from kdr.ingest_docs import PARSERS, add_files
     from kdr.retriever import invalidate
 

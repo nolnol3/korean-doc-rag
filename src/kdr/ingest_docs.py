@@ -24,7 +24,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from kdr.config import settings
 from kdr.ingest import Chunk, build_bm25, build_vector, write_jsonl
-from kdr.ocr import OCRUnavailable, ocr_image, ocr_pdf_page
+from kdr.ocr import OCRUnavailable, available as ocr_available, ocr_image, ocr_pdf_page
 
 log = logging.getLogger(__name__)
 
@@ -174,13 +174,17 @@ def add_files(files: list[Path], collection: str) -> dict:
     import json
 
     new: list[Chunk] = []
-    per_file: dict[str, int] = {}
+    per_file: dict[str, dict] = {}
+    warnings: list[str] = []
     for f in files:
         parser = PARSERS.get(f.suffix.lower())
         if not parser:
             continue
         got = parser(f)
-        per_file[f.name] = len(got)
+        kinds = [c.meta["kind"] for c in got if c.meta]
+        per_file[f.name] = {"chunks": len(got), "tables": kinds.count("table"), "ocr": kinds.count("ocr")}
+        if not got:
+            warnings.append(f"{f.name}: {_empty_reason(f)}")
         new += got
     path = settings.chunks_path_for(collection)
     existing: dict[str, Chunk] = {}
@@ -195,7 +199,19 @@ def add_files(files: list[Path], collection: str) -> dict:
     write_jsonl(path, (asdict(c) for c in chunks))
     build_bm25(chunks, collection)
     build_vector(chunks, collection=collection)
-    return {"files": per_file, "added": len(new), "total": len(chunks), "collection": collection}
+    return {"files": per_file, "warnings": warnings, "added": len(new), "total": len(chunks), "collection": collection}
+
+
+def _empty_reason(f: Path) -> str:
+    """청크가 0개인 파일에 붙일 이유. 이미지·스캔은 OCR 상태에 따라 갈린다."""
+    needs_ocr = f.suffix.lower() in IMAGE_EXTS or f.suffix.lower() == ".pdf"
+    if needs_ocr and not settings.ocr_enabled:
+        return "텍스트 레이어가 없고 OCR이 꺼져 있습니다 (OCR_ENABLED=false)"
+    if needs_ocr and not ocr_available():
+        return "텍스트 레이어가 없고 easyocr 이 설치되지 않았습니다 (pip install -e '.[ocr]')"
+    if needs_ocr:
+        return "OCR이 텍스트를 인식하지 못했습니다 (해상도가 낮거나 글자가 없는 이미지)"
+    return "추출할 텍스트가 없습니다"
 
 
 def main(argv: list[str]) -> None:
