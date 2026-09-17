@@ -9,16 +9,18 @@ A: 17일 [2]
    path: retrieve → grade:2/4 → generate → verify:ok
 ```
 
-- 검색은 벡터 검색(bge-m3)과 형태소 기반 BM25(kiwi)를 함께 씁니다. 한국어는 조사가 붙기 때문에 형태소 분석 없이 BM25를 쓰면 recall이 16%p 떨어집니다.
-- 답변 흐름은 LangGraph로 구성했습니다. 검색 → 관련성 판정 → (관련 문서가 없으면 질의를 고쳐 재검색) → 답변 생성 → 근거 검증 순서입니다.
+- 검색은 벡터 검색(bge-m3)과 형태소 기반 BM25(kiwi)를 함께 쓰고, cross-encoder(bge-reranker-v2-m3)로 다시 줄 세웁니다. 한국어는 조사가 붙기 때문에 형태소 분석 없이 BM25를 쓰면 recall이 16%p 떨어지고, reranker를 붙이면 정답 문단이 1위로 오는 비율이 79%에서 93%로 오릅니다. 검색 계층은 LangChain `Retriever`/`DocumentCompressor` 인터페이스로 조립했습니다.
+- 답변 흐름은 LangGraph로 구성했습니다. 검색 → 관련성 판정 → (관련 문서가 없으면 질의를 고쳐 재검색) → 답변 생성 → 근거 검증 순서입니다. 관련성 판정은 LLM 대신 reranker 점수로 하므로 문항당 LLM 호출이 2회입니다.
 - 로컬 모델(Ollama)로 동작하므로 API 키가 없어도 실행할 수 있습니다. Claude나 OpenAI 호환 엔드포인트도 설정으로 붙일 수 있습니다.
 - PDF와 HWPX 파일을 올려서 질문할 수 있습니다. 문서 안의 표는 행과 열 구조를 유지한 채로 색인되므로 표 안의 값을 정확히 찾아 답합니다. 스캔한 PDF와 이미지(PNG/JPG)는 OCR(EasyOCR, 한국어)로 읽습니다.
 
-| KorQuAD 200문항, Qwen3 8B | EM | F1 |
-|---|---|---|
-| 검색 없이 LLM만 | 0.045 | 0.263 |
-| 단순 RAG | 0.720 | 0.840 |
-| 그래프 RAG | 0.725 | 0.860 |
+| KorQuAD 200문항, Qwen3 8B | EM | F1 | LLM 호출 |
+|---|---|---|---|
+| 검색 없이 LLM만 | 0.045 | 0.263 | 1 |
+| 단순 RAG | 0.720 | 0.840 | 1 |
+| 그래프 RAG (grade=LLM) | 0.725 | 0.860 | 7.4 |
+| 단순 RAG + rerank | 0.765 | 0.862 | 1 |
+| 그래프 RAG + rerank | 0.745 | 0.874 | 2.0 |
 
 어떤 구성이 얼마나 기여했는지, 무엇이 기대와 달랐는지는 [docs/evaluation.md](docs/evaluation.md)에 정리했습니다.
 
@@ -75,7 +77,8 @@ curl -X POST localhost:8000/ask -H 'content-type: application/json' \
 ```
 LLM_PROVIDER=ollama          # ollama | anthropic | openai (vLLM, LiteLLM 등 OpenAI 호환 엔드포인트)
 OLLAMA_MODEL=qwen3:8b
-RETRIEVAL_MODE=hybrid        # hybrid | vector | bm25 | bm25_ws
+RETRIEVAL_MODE=hybrid_rerank # hybrid_rerank | hybrid | vector | bm25 | bm25_ws
+GRADE_MODE=rerank            # rerank | llm
 ```
 
 Docker로 띄우려면 `docker compose up`을 실행합니다. LLM은 호스트에서 실행 중인 Ollama를 사용합니다.

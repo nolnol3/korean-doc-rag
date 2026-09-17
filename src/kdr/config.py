@@ -19,9 +19,14 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     embed_model: str = "BAAI/bge-m3"
-    retrieval_mode: str = "hybrid"  # vector | bm25 | bm25_ws | hybrid
+    retrieval_mode: str = "hybrid_rerank"  # vector | bm25 | bm25_ws | hybrid | hybrid_rerank
     top_k: int = 5
     max_attempts: int = 2
+
+    # reranker (LangChain BaseDocumentCompressor, kdr/lc.py). hybrid_rerank 모드와 grade_mode=rerank 가 쓴다
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_threshold: float = 0.2  # grade_mode=rerank 에서 이 점수 이상이면 관련 문서로 본다
+    grade_mode: str = "rerank"  # rerank: cross-encoder 점수 임계값 (LLM 호출 0) | llm: 문서마다 LLM yes/no
 
     # 문서 청크 (PDF·HWPX·OCR 본문). 글자 수 기준. KorQuAD는 문단 그대로라 해당 없음
     chunk_size: int = 900

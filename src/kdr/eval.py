@@ -32,7 +32,7 @@ def model_dir() -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 SEED = 20260903
-MODES = ["vector", "bm25_ws", "bm25", "hybrid"]
+MODES = ["vector", "bm25_ws", "bm25", "hybrid", "hybrid_rerank"]
 KS = (1, 3, 5, 10)
 
 
@@ -109,28 +109,39 @@ def rescore(d: Path) -> None:
 
 # ── ablation ──────────────────────────────────────────────────────────────────
 
-def ablation(n: int = 1000) -> dict:
+def ablation(n: int = 1000, modes: list[str] | None = None) -> dict:
+    """modes 를 주면 그 방식만 다시 재고 나머지는 저장된 json 값을 유지한다 (검색은 결정적이라 재계산이 불필요)."""
+    modes = modes or MODES
     qs = load_questions(n)
-    recall = {m: {k: 0 for k in KS} for m in MODES}
+    recall = {m: {k: 0 for k in KS} for m in modes}
     for q in tqdm(qs, desc="ablation"):
-        for m in MODES:
+        for m in modes:
             ids = [h.id for h in retrieve(q["question"], k=max(KS), mode=m)]
             for k in KS:
                 recall[m][k] += q["gold_chunk"] in ids[:k]
-    out = {m: {f"recall@{k}": round(v / n, 4) for k, v in d.items()} for m, d in recall.items()}
-    out["_meta"] = {"n": n, "seed": SEED, "embed_model": settings.embed_model}
+    path = RESULTS / "retrieval_ablation.json"
+    out = json.loads(path.read_text()) if path.exists() and modes != MODES else {}
+    out.update({m: {f"recall@{k}": round(v / n, 4) for k, v in d.items()} for m, d in recall.items()})
+    out["_meta"] = {"n": n, "seed": SEED, "embed_model": settings.embed_model, "rerank_model": settings.rerank_model}
     RESULTS.mkdir(exist_ok=True)
-    (RESULTS / "retrieval_ablation.json").write_text(json.dumps(out, indent=2, ensure_ascii=False))
-    print(f"\n{'mode':10s}" + "".join(f"{'R@'+str(k):>8s}" for k in KS))
+    path.write_text(json.dumps(out, indent=2, ensure_ascii=False))
+    print(f"\n{'mode':14s}" + "".join(f"{'R@'+str(k):>8s}" for k in KS))
     for m in MODES:
-        print(f"{m:10s}" + "".join(f"{out[m][f'recall@{k}']:8.3f}" for k in KS))
+        if m in out:
+            print(f"{m:14s}" + "".join(f"{out[m][f'recall@{k}']:8.3f}" for k in KS))
     return out
 
 
 # ── naive vs graph ────────────────────────────────────────────────────────────
 
+ARMS = ["none", "naive", "graph", "naive_rerank", "graph_rerank"]
+
+
 def run_arm(arm: str, n: int, workers: int = 1) -> list[dict]:
-    if arm == "naive":
+    # *_rerank: 검색을 hybrid_rerank 로, graph 는 grade 도 cross-encoder 로 (LLM grade 호출 0). 프로세스 전역 설정을 바꾼다
+    settings.retrieval_mode = "hybrid_rerank" if arm.endswith("_rerank") else "hybrid"
+    settings.grade_mode = "rerank" if arm == "graph_rerank" else "llm"
+    if arm.startswith("naive"):
         from kdr.baseline import ask
     elif arm == "none":
         from kdr.baseline import ask_no_retrieval as ask
@@ -202,20 +213,21 @@ def summarize(arms: list[str], d: Path | None = None) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--ablation", action="store_true")
-    ap.add_argument("--arm", choices=["none", "naive", "graph"], action="append")
+    ap.add_argument("--mode", choices=MODES, action="append", help="ablation 에서 이 방식만 다시 잰다")
+    ap.add_argument("--arm", choices=ARMS, action="append")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--workers", type=int, default=1, help="동시 문항 수. API provider는 8 권장, Ollama는 OLLAMA_NUM_PARALLEL 이하")
     ap.add_argument("--summarize", metavar="DIR", help="결과 디렉토리만 다시 집계")
     ap.add_argument("--rescore", metavar="DIR", help="저장된 답변으로 점수만 재계산")
     a = ap.parse_args()
     if a.ablation:
-        ablation(a.n if a.n != 200 else 1000)
+        ablation(a.n if a.n != 200 else 1000, a.mode)
     elif a.summarize:
-        summarize(["none", "naive", "graph"], Path(a.summarize))
+        summarize(ARMS, Path(a.summarize))
     elif a.rescore:
         rescore(Path(a.rescore))
-        summarize(["none", "naive", "graph"], Path(a.rescore))
+        summarize(ARMS, Path(a.rescore))
     else:
         for arm in a.arm or ["none", "naive", "graph"]:
             run_arm(arm, a.n, a.workers)
-        summarize(["none", "naive", "graph"])
+        summarize(ARMS)

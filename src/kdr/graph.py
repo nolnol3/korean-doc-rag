@@ -58,11 +58,21 @@ def _grade_one(question: str, d: Hit, usage: Usage) -> bool:
 
 
 def n_grade(s: State) -> dict:
-    """문서 5개를 각각 yes/no로 — 병렬. 한 프롬프트에 5개를 넣는 것보다 짧고(토큰 1/4), 7B에 더 정확하다."""
-    with ThreadPoolExecutor(max_workers=len(s["docs"]) or 1) as ex:
-        flags = list(ex.map(lambda d: _grade_one(s["question"], d, s["usage"]), s["docs"]))
-    relevant = [d for d, ok in zip(s["docs"], flags) if ok]
-    return {"relevant": relevant, "path": s["path"] + [f"grade:{len(relevant)}/{len(s['docs'])}"]}
+    """문서 5개를 각각 yes/no로 — 병렬. 한 프롬프트에 5개를 넣는 것보다 짧고(토큰 1/4), 7B에 더 정확하다.
+
+    GRADE_MODE=rerank 면 LLM 대신 cross-encoder 점수 ≥ rerank_threshold 로 판정한다 (LLM 호출 0, ~0.2초)."""
+    if settings.grade_mode == "rerank":
+        from kdr.lc import rerank_scores
+
+        scores = rerank_scores(s["question"], [d.text for d in s["docs"]])
+        relevant = [d for d, sc in zip(s["docs"], scores) if sc >= settings.rerank_threshold]
+        tag = "grade:rerank"
+    else:
+        with ThreadPoolExecutor(max_workers=len(s["docs"]) or 1) as ex:
+            flags = list(ex.map(lambda d: _grade_one(s["question"], d, s["usage"]), s["docs"]))
+        relevant = [d for d, ok in zip(s["docs"], flags) if ok]
+        tag = "grade"
+    return {"relevant": relevant, "path": s["path"] + [f"{tag}:{len(relevant)}/{len(s['docs'])}"]}
 
 
 def n_rewrite(s: State) -> dict:

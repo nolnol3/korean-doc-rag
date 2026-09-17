@@ -26,6 +26,13 @@
   "_meta": {
     "n": 1000,
     "seed": 20260903,
-    "embed_model": "BAAI/bge-m3"
+    "embed_model": "BAAI/bge-m3",
+    "rerank_model": "BAAI/bge-reranker-v2-m3"
+  },
+  "hybrid_rerank": {
+    "recall@1": 0.932,
+    "recall@3": 0.979,
+    "recall@5": 0.986,
+    "recall@10": 0.987
   }
 }

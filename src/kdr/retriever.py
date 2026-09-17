@@ -5,11 +5,13 @@ mode:
   bm25     kiwi 형태소 BM25
   bm25_ws  공백 분리 BM25 (ablation)
   hybrid   vector + bm25 를 RRF로 합침 (기본)
+  hybrid_rerank  hybrid 로 k×4 후보 → cross-encoder 재정렬 (LangChain ContextualCompressionRetriever, kdr/lc.py)
 """
 from __future__ import annotations
 
 import json
 import pickle
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -26,6 +28,7 @@ class Hit:
     title: str
     text: str
     score: float
+    rerank: float | None = None  # hybrid_rerank 일 때 cross-encoder 점수
 
 
 @lru_cache(maxsize=8)
@@ -73,11 +76,17 @@ def _hit(col: str, cid: str, score: float) -> Hit:
     return Hit(cid, c["title"], c["text"], float(score))
 
 
+# 프로세스 안의 모든 로컬 모델 forward(bge-m3, cross-encoder)가 공유하는 락.
+# MPS 는 동시 forward 에 안전하지 않다 — 모델별로 락을 따로 두면 서로 다른 모델이 겹쳐 Metal 어설션으로 죽는다.
+model_lock = threading.Lock()
+
+
 def _vector(query: str, k: int, col: str) -> list[Hit]:
     n = _collection(col).count()
     if n == 0:
         return []
-    q = _embedder().encode([query], normalize_embeddings=True)[0].tolist()
+    with model_lock:
+        q = _embedder().encode([query], normalize_embeddings=True)[0].tolist()
     res = _collection(col).query(query_embeddings=[q], n_results=min(k, n), include=["distances"])
     return [_hit(col, cid, 1.0 - d) for cid, d in zip(res["ids"][0], res["distances"][0])]
 
@@ -112,4 +121,10 @@ def retrieve(query: str, k: int | None = None, mode: str | None = None, collecti
     if mode == "hybrid":
         # 각 계열에서 넉넉히 뽑아 합친다. RRF는 순위만 보므로 점수 스케일이 달라도 된다.
         return _rrf(col, _vector(query, k * 4, col), _bm25_search(query, k * 4, "kiwi", col), k=k)
+    if mode == "hybrid_rerank":
+        from kdr.lc import rerank_retriever
+
+        docs = rerank_retriever(col, k).invoke(query)
+        return [Hit(d.metadata["id"], d.metadata["title"], d.page_content, d.metadata["rerank_score"],
+                    rerank=d.metadata["rerank_score"]) for d in docs]
     raise ValueError(f"unknown retrieval mode: {mode}")

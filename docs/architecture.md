@@ -21,8 +21,8 @@
 
 | 노드 | 역할 | LLM 호출 |
 |---|---|---|
-| `retrieve` | hybrid 검색으로 상위 5개 문단을 가져온다 | 0 |
-| `grade` | 문단마다 "질문의 답이 이 안에 있는가"를 예/아니오로 판정한다. 5개를 병렬로 호출한다 | 5 |
+| `retrieve` | hybrid 검색으로 상위 20개를 뽑고 cross-encoder로 다시 줄 세워 5개를 남긴다(`hybrid_rerank`, 기본) | 0 |
+| `grade` | 문단마다 "질문의 답이 이 안에 있는가"를 판정한다. 기본(`GRADE_MODE=rerank`)은 cross-encoder 점수 ≥ 0.2. `llm`이면 문단마다 LLM에 예/아니오를 물어 5개를 병렬 호출한다 | 0 (llm: 5) |
 | `rewrite` | 관련 문단이 하나도 없을 때 검색용 질의를 다시 쓴다. 이미 시도한 질의 목록을 함께 주어 같은 질의가 반복되지 않게 한다 | 1 |
 | `generate` | 관련 문단만 넣고 답을 만든다. 답은 명사구로 짧게 쓰고 근거 문단 번호를 `[n]` 형식으로 붙이게 한다 | 1 |
 | `verify` | 답의 핵심 사실이 인용한 문단으로 뒷받침되는지 확인한다 | 1 |
@@ -32,7 +32,7 @@
 - `grade` 다음: 관련 문단이 있으면 `generate`로 간다. 없으면 남은 재시도가 있을 때 `rewrite`로 가고, 없으면 "문서에서 근거를 찾지 못했습니다"로 끝낸다.
 - `verify` 다음: 근거가 확인되면 끝낸다. 확인되지 않으면 `rewrite`로 간다. 단, 재검색해서 가져온 문단이 직전과 같으면 같은 답이 다시 나올 것이므로 그 자리에서 멈춘다(`stop:no-new-evidence`).
 
-LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 많을 때 15회 정도다.
+LLM 호출 수는 기본 구성에서 가장 적을 때 2회(generate + verify), 재검색이 두 번 돌면 6회 정도다. `GRADE_MODE=llm`이면 grade 5회가 매번 더해져 7~15회가 된다.
 
 ## 비교 대상
 
@@ -41,6 +41,8 @@ LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 �
 | `none` | 검색 없이 LLM만 | 모델이 문서 없이 얼마나 답하는가 |
 | `naive` | `retrieve → generate` | 검색만 붙였을 때의 효과 |
 | `graph` | 위의 그래프 | grade·rewrite·verify가 더해 주는 효과 |
+| `naive_rerank` | `retrieve(hybrid_rerank) → generate` | cross-encoder 재정렬이 검색에 주는 효과 |
+| `graph_rerank` | 위의 그래프, 검색은 `hybrid_rerank`, grade는 cross-encoder | LLM grade 5회를 reranker 1회로 바꿨을 때의 정확도·비용 |
 
 세 구성은 같은 검색기와 같은 답변 프롬프트를 쓴다. 차이는 그래프 노드가 있고 없고뿐이므로 결과 차이를 그 노드들의 효과로 볼 수 있다.
 
@@ -52,6 +54,11 @@ LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 �
 | `bm25` | kiwipiepy로 형태소 분석을 하고 명사·동사·수식언·숫자·영문만 남겨 rank_bm25에 넣는다 |
 | `bm25_ws` | 공백으로만 자른 BM25. 형태소 분석이 없는 검색 플랫폼에서 한국어가 어떻게 되는지 보기 위한 비교용이다 |
 | `hybrid` | vector와 bm25에서 각각 상위 20개를 가져와 RRF(k=60)로 합치고 상위 5개를 쓴다. 기본값이다 |
+| `hybrid_rerank` | hybrid로 상위 20개를 뽑아 cross-encoder(bge-reranker-v2-m3)로 다시 점수를 매기고 상위 5개를 쓴다. LangChain `ContextualCompressionRetriever`로 조립했다([lc.py](../src/kdr/lc.py)) |
+
+### LangChain 경계
+
+검색 계층은 LangChain 인터페이스로도 노출된다. `KdrRetriever`(`BaseRetriever`)가 hybrid 검색을 `Document` 목록으로 감싸고, `CrossEncoderRerank`(`BaseDocumentCompressor`)가 재정렬하며, 둘을 `ContextualCompressionRetriever`가 잇는다. 그래서 LangChain의 다른 retriever·compressor와 바꿔 끼울 수 있다. 반대로 LLM 호출은 LangChain을 거치지 않는다(아래 설계 결정). `langchain-community`는 sunset 상태라 쓰지 않고, `langchain-core`의 추상 클래스와 `langchain-classic`의 조립 클래스만 쓴다.
 
 ## LLM 연결
 
@@ -86,6 +93,8 @@ LLM 호출 수는 가장 적을 때 7회(grade 5 + generate + verify), 가장 �
 | verify를 넣는다 | 사내 문서 QA에서는 답에 근거가 있는지가 핵심 요구사항이다. 7B 모델로는 이 판정이 되지 않는다는 점도 실험으로 확인했다([evaluation.md](evaluation.md)) |
 | `langgraph` 라이브러리만 쓰고 서버는 FastAPI로 직접 만든다 | `langgraph`는 MIT지만 서버 런타임인 `langgraph-api`는 Elastic License여서 운영 배포에 상용 라이선스가 필요하다 |
 | Anthropic SDK와 httpx를 직접 쓴다 | LangChain 래퍼를 거치지 않으면 실제로 보내는 프롬프트가 코드에 그대로 보인다 |
+| LangChain은 검색 계층(Retriever·DocumentCompressor)과 청킹에만 쓴다 | 이 두 곳은 인터페이스가 안정적이고 교체 가능성이 실익이 있다(reranker·splitter 갈아끼우기). LLM 호출과 프롬프트는 실험 통제를 위해 직접 다룬다 |
+| reranker 점수를 grade에도 쓴다 | grade는 LLM 호출 5회로 그래프 지연의 대부분이다. cross-encoder는 같은 판정을 호출 0회·0.2초에 한다. 정답 문단 유지율 97.9%, 무관 문단 통과율 21.7%(임계값 0.2, dev 300문항) |
 | temperature 0, seed 고정, 문항별 결과를 jsonl로 남긴다 | 재현과 사후 분석을 위해서다 |
 
 ## 운영 환경으로 가져갈 때 바꿀 것
